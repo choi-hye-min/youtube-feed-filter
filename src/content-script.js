@@ -134,6 +134,30 @@ function performMarkAsNotInterested(videoElement) {
           if (notInterestedItem) {
             notInterestedItem.click();
             debugLog('Marked video as not interested');
+            
+            // Poll for the "Video hidden" notification to appear before removal
+            let checkCount = 0;
+            const checkHiddenInterval = setInterval(() => {
+              const isHiddenNotification = videoElement.querySelector('notification-multi-action-renderer') || 
+                                          videoElement.innerText.includes('동영상 숨김') ||
+                                          videoElement.innerText.includes('Video hidden');
+              
+              if (isHiddenNotification || checkCount > 10) { // Max 2 seconds polling
+                clearInterval(checkHiddenInterval);
+                
+                // Smooth fade-out and remove
+                videoElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                videoElement.style.opacity = '0';
+                videoElement.style.transform = 'scale(0.95)';
+                
+                setTimeout(() => {
+                  videoElement.remove();
+                  debugLog('Removed video element from DOM after confirmation');
+                }, 300);
+              }
+              checkCount++;
+            }, 200);
+            
             resolve(true);
           } else {
             debugLog('Not interested option not found in menu');

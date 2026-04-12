@@ -9,6 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const thresholdSelect = document.getElementById('threshold-select');
   const enableFilter = document.getElementById('enable-filter');
   const statusDiv = document.getElementById('status');
+  const detectedCountSpan = document.getElementById('detected-count');
+  const skippedCountSpan = document.getElementById('skipped-count');
   
   console.log('[youtube_skip] Popup opened, loading state...');
 
@@ -24,7 +26,29 @@ document.addEventListener('DOMContentLoaded', () => {
     enableFilter.checked = savedEnabled;
     
     updateStatus(savedThreshold, savedEnabled);
+    updateStats();
   });
+
+  // Periodically update stats while popup is open
+  const statsInterval = setInterval(updateStats, 1000);
+  
+  // Cleanup interval when popup closes
+  window.addEventListener('unload', () => {
+    clearInterval(statsInterval);
+  });
+
+  function updateStats() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].url.includes('youtube.com')) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'getStats' }, (response) => {
+          if (response) {
+            detectedCountSpan.textContent = response.detected || 0;
+            skippedCountSpan.textContent = response.skipped || 0;
+          }
+        });
+      }
+    });
+  }
   
   // Threshold selection handler
   thresholdSelect.addEventListener('change', (e) => {

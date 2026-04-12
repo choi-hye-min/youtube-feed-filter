@@ -12,6 +12,12 @@ let filterState = {
   thresholdMs: 30 * 24 * 60 * 60 * 1000 // 1 month default
 };
 
+// Stats tracking
+let stats = {
+  detected: 0,
+  skipped: 0
+};
+
 // Queue for sequential "Not interested" actions
 let actionQueue = [];
 let isProcessingQueue = false;
@@ -20,8 +26,11 @@ let isProcessingQueue = false;
  * Add a video to the action queue
  */
 function queueNotInterested(videoElement) {
-  if (videoElement.dataset.youtubeSkipProcessed) return;
-  videoElement.dataset.youtubeSkipProcessed = 'true';
+  if (videoElement.dataset.youtubeSkipProcessed === 'queued' || 
+      videoElement.dataset.youtubeSkipProcessed === 'done') return;
+  
+  videoElement.dataset.youtubeSkipProcessed = 'queued';
+  stats.skipped++;
   
   actionQueue.push(videoElement);
   if (!isProcessingQueue) {
@@ -41,7 +50,10 @@ async function processQueue() {
   while (actionQueue.length > 0) {
     const videoElement = actionQueue.shift();
     try {
-      await performMarkAsNotInterested(videoElement);
+      const success = await performMarkAsNotInterested(videoElement);
+      if (success) {
+        videoElement.dataset.youtubeSkipProcessed = 'done';
+      }
       // Wait for UI to stabilize before next action
       await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (e) {
@@ -269,22 +281,13 @@ function applyFilter() {
     
     console.log(`[youtube_skip] Evaluating ${videoElements.length} videos against threshold of ${filterState.threshold}`);
     
-    // Debug: if no videos found, log the page structure
-    if (videoElements.length === 0) {
-      console.log('[youtube_skip] No videos found. Debugging DOM structure...');
-      
-      // Count all elements with specific tags
-      const richItems = document.querySelectorAll('ytd-rich-item-renderer').length;
-      const videoRenderers = document.querySelectorAll('ytd-video-renderer').length;
-      
-      console.log(`[youtube_skip] Found ytd-rich-item-renderer: ${richItems}, ytd-video-renderer: ${videoRenderers}`);
-      
-      // Check for video content in alternate structures
-      const gridElements = document.querySelectorAll('[role="grid"], [role="list"]');
-      console.log(`[youtube_skip] Found grid/list elements: ${gridElements.length}`);
-    }
-    
     videoElements.forEach((videoElement, index) => {
+      // Track newly detected videos
+      if (!videoElement.dataset.youtubeSkipProcessed) {
+        stats.detected++;
+        videoElement.dataset.youtubeSkipProcessed = 'detected';
+      }
+
       const uploadAge = extractUploadAge(videoElement);
       
       if (uploadAge !== null && uploadAge >= filterState.thresholdMs) {
@@ -334,14 +337,6 @@ function initMutationObserver() {
   
   // Debug: Log available ytd elements
   if (!feedContainer) {
-    console.log('[youtube_skip] ytd-feed-renderer not found. Searching for alternatives...');
-    const ytdElements = document.querySelectorAll('[id*="feed"], [id*="content"], ytd-browse-results-renderer, ytd-two-column-browse-results-renderer, #content, #primary');
-    console.log('[youtube_skip] Found ytd/container elements:', ytdElements.length);
-    ytdElements.forEach((el, i) => {
-      console.log(`[youtube_skip] Element ${i}: ${el.tagName} id="${el.id}" class="${el.className}"`);
-    });
-    
-    // Try alternative containers
     feedContainer = document.querySelector('ytd-browse-results-renderer') ||
                    document.querySelector('ytd-two-column-browse-results-renderer') ||
                    document.querySelector('#content') ||
@@ -356,8 +351,6 @@ function initMutationObserver() {
       attributes: false
     });
     console.log('[youtube_skip] Mutation observer started on:', feedContainer.tagName);
-  } else {
-    console.log('[youtube_skip] Feed container not found. HTML structure:', document.body.innerHTML.substring(0, 500));
   }
 }
 
@@ -375,6 +368,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: true });
     });
     return true; // Will respond asynchronously
+  } else if (request.action === 'getStats') {
+    sendResponse(stats);
+    return false;
   }
 });
 

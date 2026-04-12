@@ -31,6 +31,12 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
+This plan must explicitly validate the project approach against the constitution's core principles:
+- Code quality and maintainability
+- Test-first delivery and regression discipline
+- User experience consistency and accessibility
+- Performance goals with measurable validation
+
 [Gates determined based on constitution file]
 
 ## Project Structure

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>YouTube Feed Filter</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="popup-container">
+        <h1>YouTube Feed Filter</h1>
+        
+        <div id="filter-control">
+            <label for="threshold-select">Time Threshold:</label>
+            <select id="threshold-select">
+                <option value="">-- Select a threshold --</option>
+                <option value="1week">1 week</option>
+                <option value="2weeks">2 weeks</option>
+                <option value="1month">1 month</option>
+                <option value="3months">3 months</option>
+                <option value="6months">6 months</option>
+            </select>
+        </div>
+        
+        <div id="filter-toggle">
+            <label for="enable-filter">
+                <input type="checkbox" id="enable-filter" checked>
+                Enable Filter
+            </label>
+        </div>
+        
+        <div id="status" style="margin-top: 10px; font-size: 12px; color: #666;"></div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

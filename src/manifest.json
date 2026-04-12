@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Feed Filter",
+  "version": "1.0.0",
+  "description": "Filter YouTube main page feed videos by upload date. Mark videos older than your selected threshold.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*"
+  ],
+  "action": {
+    "default_title": "YouTube Feed Filter",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

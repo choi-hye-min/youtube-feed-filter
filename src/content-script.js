@@ -64,8 +64,8 @@ async function processQueue() {
       if (success) {
         videoElement.dataset.youtubeSkipProcessed = 'done';
       }
-      // Wait for UI to stabilize before next action
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Reduced delay to 200ms for faster processing
+      await new Promise(resolve => setTimeout(resolve, 200));
     } catch (e) {
       console.error('[youtube_skip] Error in queue processing:', e);
     }
@@ -143,7 +143,7 @@ function performMarkAsNotInterested(videoElement) {
           console.error('[youtube_skip] Error clicking not interested:', e);
           resolve(false);
         }
-      }, 500);
+      }, 250); // Reduced delay to 250ms for faster processing
     } catch (e) {
       console.error('[youtube_skip] Error triggering not interested action:', e);
       resolve(false);

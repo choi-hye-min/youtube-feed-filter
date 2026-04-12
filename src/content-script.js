@@ -9,7 +9,8 @@
 let filterState = {
   threshold: '1month',
   enabled: true,
-  thresholdMs: 30 * 24 * 60 * 60 * 1000 // 1 month default
+  thresholdMs: 30 * 24 * 60 * 60 * 1000, // 1 month default
+  loggingEnabled: false
 };
 
 // Stats tracking
@@ -21,6 +22,15 @@ let stats = {
 // Queue for sequential "Not interested" actions
 let actionQueue = [];
 let isProcessingQueue = false;
+
+/**
+ * Custom logger that respects loggingEnabled state
+ */
+function debugLog(...args) {
+  if (filterState.loggingEnabled) {
+    console.log('[youtube_skip]', ...args);
+  }
+}
 
 /**
  * Add a video to the action queue
@@ -45,7 +55,7 @@ async function processQueue() {
   if (isProcessingQueue || actionQueue.length === 0) return;
   
   isProcessingQueue = true;
-  console.log(`[youtube_skip] Processing queue of ${actionQueue.length} videos`);
+  debugLog(`Processing queue of ${actionQueue.length} videos`);
   
   while (actionQueue.length > 0) {
     const videoElement = actionQueue.shift();
@@ -62,7 +72,7 @@ async function processQueue() {
   }
   
   isProcessingQueue = false;
-  console.log('[youtube_skip] Finished processing queue');
+  debugLog('Finished processing queue');
   
   // Scroll to top after completing all filter actions
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -100,10 +110,11 @@ function performMarkAsNotInterested(videoElement) {
       }
       
       if (!menuButton) {
-        console.log('[youtube_skip] Menu button not found for video');
+        debugLog('Menu button not found for video');
         return resolve(false);
       }
       
+      debugLog('Clicking menu button...');
       menuButton.click();
       
       setTimeout(() => {
@@ -122,10 +133,10 @@ function performMarkAsNotInterested(videoElement) {
           
           if (notInterestedItem) {
             notInterestedItem.click();
-            console.log('[youtube_skip] Marked video as not interested');
+            debugLog('Marked video as not interested');
             resolve(true);
           } else {
-            console.log('[youtube_skip] Not interested option not found in menu');
+            debugLog('Not interested option not found in menu');
             resolve(false);
           }
         } catch (e) {
@@ -172,14 +183,14 @@ function extractUploadAge(videoElement) {
     // Split by lines and look for time patterns
     const lines = allText.split('\n').map(l => l.trim()).filter(Boolean);
     
-    console.log('[youtube_skip] Video text lines:', lines.slice(0, 10)); // Debug: first 10 lines
+    debugLog('Video text lines:', lines.slice(0, 10));
     
     for (const line of lines) {
       // Match English patterns: "2 weeks ago", "1 day ago"
       // Match Korean patterns: "2주 전", "1일 전", "3년 전"
       if (/\d+\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i.test(line)) {
         timeText = line;
-        console.log('[youtube_skip] Found time text in line:', timeText);
+        debugLog('Found time text in line:', timeText);
         break;
       }
     }
@@ -192,18 +203,18 @@ function extractUploadAge(videoElement) {
         // Check for English or Korean time patterns
         if (/\d+\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i.test(ariaLabel)) {
           timeText = ariaLabel;
-          console.log('[youtube_skip] Found time in aria-label:', timeText);
+          debugLog('Found time in aria-label:', timeText);
           break;
         }
       }
     }
     
     if (!timeText) {
-      console.log('[youtube_skip] No time text found. Full element text sample:', allText.substring(0, 200));
+      debugLog('No time text found. Full element text sample:', allText.substring(0, 200));
       return null;
     }
     
-    console.log('[youtube_skip] Extracted time text:', timeText);
+    debugLog('Extracted time text:', timeText);
     
     // Parse time text and convert to milliseconds
     const timeMs = parseTimeToMs(timeText);
@@ -227,7 +238,7 @@ function parseTimeToMs(timeText) {
   const match = text.match(/(\d+)\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)?/);
   
   if (!match) {
-    console.log('[youtube_skip] Could not parse time text:', timeText);
+    debugLog('Could not parse time text:', timeText);
     return 0;
   }
   
@@ -262,7 +273,7 @@ function parseTimeToMs(timeText) {
   };
   
   const timeMs = amount * (unitToMs[unit] || 0);
-  console.log(`[youtube_skip] Parsed "${timeText}" as ${amount} ${unit} = ${timeMs}ms`);
+  debugLog(`Parsed "${timeText}" as ${amount} ${unit} = ${timeMs}ms`);
   return timeMs;
 }
 
@@ -271,7 +282,7 @@ function parseTimeToMs(timeText) {
  */
 function applyFilter() {
   if (!filterState.enabled) {
-    console.log('[youtube_skip] Filter is disabled');
+    debugLog('Filter is disabled');
     return;
   }
   
@@ -279,7 +290,7 @@ function applyFilter() {
     // Find all video recommendation cards on the main page
     const videoElements = document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer');
     
-    console.log(`[youtube_skip] Evaluating ${videoElements.length} videos against threshold of ${filterState.threshold}`);
+    debugLog(`Evaluating ${videoElements.length} videos against threshold of ${filterState.threshold}`);
     
     videoElements.forEach((videoElement, index) => {
       // Track newly detected videos
@@ -292,12 +303,12 @@ function applyFilter() {
       
       if (uploadAge !== null && uploadAge >= filterState.thresholdMs) {
         // Video is older than or equal to threshold - mark as not interested
-        console.log(`[youtube_skip] Video ${index}: ${uploadAge}ms old (matches/exceeds threshold)`);
+        debugLog(`Video ${index}: ${uploadAge}ms old (matches/exceeds threshold)`);
         markAsNotInterested(videoElement);
       } else if (uploadAge !== null) {
-        console.log(`[youtube_skip] Video ${index}: ${uploadAge}ms old (within threshold)`);
+        debugLog(`Video ${index}: ${uploadAge}ms old (within threshold)`);
       } else {
-        console.log(`[youtube_skip] Video ${index}: Could not determine age`);
+        debugLog(`Video ${index}: Could not determine age`);
       }
     });
   } catch (e) {
@@ -335,7 +346,6 @@ function initMutationObserver() {
   // Start observing the feed container
   let feedContainer = document.querySelector('ytd-feed-renderer');
   
-  // Debug: Log available ytd elements
   if (!feedContainer) {
     feedContainer = document.querySelector('ytd-browse-results-renderer') ||
                    document.querySelector('ytd-two-column-browse-results-renderer') ||
@@ -350,7 +360,7 @@ function initMutationObserver() {
       subtree: true,
       attributes: false
     });
-    console.log('[youtube_skip] Mutation observer started on:', feedContainer.tagName);
+    debugLog('Mutation observer started on:', feedContainer.tagName);
   }
 }
 
@@ -364,6 +374,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       filterState.threshold = response.threshold;
       filterState.enabled = response.enabled;
       filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
+      filterState.loggingEnabled = response.logging;
       applyFilter();
       sendResponse({ success: true });
     });
@@ -371,34 +382,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'getStats') {
     sendResponse(stats);
     return false;
+  } else if (request.action === 'setLoggingEnabled') {
+    filterState.loggingEnabled = request.enabled;
+    debugLog('Logging state changed to:', request.enabled);
+    sendResponse({ success: true });
+    return false;
   }
 });
 
 /**
  * Initialize on page load
  */
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    // Fetch current state from background
-    chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
-      filterState.threshold = response.threshold;
-      filterState.enabled = response.enabled;
-      filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
-      
-      initMutationObserver();
-      applyFilter();
-    });
-  });
-} else {
-  // Already loaded
+function init() {
+  // Fetch current state from background
   chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
     filterState.threshold = response.threshold;
     filterState.enabled = response.enabled;
     filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
+    filterState.loggingEnabled = response.logging;
     
     initMutationObserver();
     applyFilter();
   });
 }
 
-console.log('[youtube_skip] Content script loaded on', window.location.href);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+debugLog('Content script loaded');

@@ -8,7 +8,8 @@
 // Storage keys
 const STORAGE_KEYS = {
   THRESHOLD: 'filter_threshold',
-  ENABLED: 'filter_enabled'
+  ENABLED: 'filter_enabled',
+  LOGGING: 'logging_enabled'
 };
 
 // Threshold value definitions (in milliseconds)
@@ -25,12 +26,15 @@ const THRESHOLD_PRESETS = {
  */
 chrome.runtime.onInstalled.addListener(() => {
   // Set default state
-  chrome.storage.local.get([STORAGE_KEYS.THRESHOLD, STORAGE_KEYS.ENABLED], (result) => {
+  chrome.storage.local.get([STORAGE_KEYS.THRESHOLD, STORAGE_KEYS.ENABLED, STORAGE_KEYS.LOGGING], (result) => {
     if (!result[STORAGE_KEYS.THRESHOLD]) {
       chrome.storage.local.set({ [STORAGE_KEYS.THRESHOLD]: '1month' });
     }
     if (result[STORAGE_KEYS.ENABLED] === undefined) {
       chrome.storage.local.set({ [STORAGE_KEYS.ENABLED]: true });
+    }
+    if (result[STORAGE_KEYS.LOGGING] === undefined) {
+      chrome.storage.local.set({ [STORAGE_KEYS.LOGGING]: false });
     }
   });
   console.log('[youtube_skip] YouTube Feed Filter extension installed');
@@ -64,11 +68,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: true });
     });
     return true; // Asynchronous
+  } else if (request.action === 'setLoggingEnabled') {
+    console.log('[youtube_skip] Background: Setting logging enabled to', request.enabled);
+    chrome.storage.local.set({ [STORAGE_KEYS.LOGGING]: request.enabled }, () => {
+      // Notify content scripts
+      chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.id, { action: 'setLoggingEnabled', enabled: request.enabled }).catch(() => {});
+        });
+      });
+      sendResponse({ success: true });
+    });
+    return true; // Asynchronous
   } else if (request.action === 'getState') {
-    chrome.storage.local.get([STORAGE_KEYS.THRESHOLD, STORAGE_KEYS.ENABLED], (result) => {
+    chrome.storage.local.get([STORAGE_KEYS.THRESHOLD, STORAGE_KEYS.ENABLED, STORAGE_KEYS.LOGGING], (result) => {
       const state = {
         threshold: result[STORAGE_KEYS.THRESHOLD] || '1month',
-        enabled: result[STORAGE_KEYS.ENABLED] !== false
+        enabled: result[STORAGE_KEYS.ENABLED] !== false,
+        logging: result[STORAGE_KEYS.LOGGING] === true
       };
       console.log('[youtube_skip] Background: Sending state', state);
       sendResponse(state);
@@ -78,4 +95,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 console.log('[youtube_skip] Background script loaded');
-

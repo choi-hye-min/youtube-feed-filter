@@ -8,6 +8,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const thresholdSelect = document.getElementById('threshold-select');
   const enableFilter = document.getElementById('enable-filter');
+  const enableLogging = document.getElementById('enable-logging');
   const statusDiv = document.getElementById('status');
   const detectedCountSpan = document.getElementById('detected-count');
   const skippedCountSpan = document.getElementById('skipped-count');
@@ -15,15 +16,17 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('[youtube_skip] Popup opened, loading state...');
 
   // Load saved state from storage
-  chrome.storage.local.get(['filter_threshold', 'filter_enabled'], (result) => {
+  chrome.storage.local.get(['filter_threshold', 'filter_enabled', 'logging_enabled'], (result) => {
     const savedThreshold = result.filter_threshold || '1month';
     const savedEnabled = result.filter_enabled !== false;
+    const savedLogging = result.logging_enabled === true;
     
-    console.log('[youtube_skip] Loaded state:', { savedThreshold, savedEnabled });
+    console.log('[youtube_skip] Loaded state:', { savedThreshold, savedEnabled, savedLogging });
     
     // Restore UI state
     thresholdSelect.value = savedThreshold;
     enableFilter.checked = savedEnabled;
+    enableLogging.checked = savedLogging;
     
     updateStatus(savedThreshold, savedEnabled);
     updateStats();
@@ -82,6 +85,18 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatus(result.filter_threshold || '1month', enabled);
           });
         }
+      });
+    });
+  });
+
+  // Logging toggle handler
+  enableLogging.addEventListener('change', (e) => {
+    const enabled = e.target.checked;
+    console.log('[youtube_skip] Logging toggle changed to:', enabled);
+    chrome.storage.local.set({ logging_enabled: enabled }, () => {
+      chrome.runtime.sendMessage({
+        action: 'setLoggingEnabled',
+        enabled: enabled
       });
     });
   });

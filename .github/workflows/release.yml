@@ -1,12 +1,13 @@
-name: Release Build
+name: Auto Release Build
 
 on:
-  release:
-    types: [published] # 릴리즈가 발행될 때 실행
+  push:
+    tags:
+      - 'release-*' # release-v1.0.0 과 같은 태그가 푸시될 때 실행
 
 jobs:
   build:
-    name: Zip and Upload Asset
+    name: Create Release and Upload Asset
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,13 +22,17 @@ jobs:
       - name: Create Extension Zip
         run: |
           # src 폴더 내부의 파일들과 README.md를 포함하여 압축
-          # -r: 하위 폴더 포함, -j: 최상위 폴더 경로 무시 (src 내부 파일만 담기 위해)
           cd src && zip -r ../youtube-feed-filter-extension.zip . *
           cd .. && zip -u youtube-feed-filter-extension.zip README.md
 
-      - name: Upload Release Asset
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: youtube-feed-filter-extension.zip
+          name: Release ${{ github.ref_name }} # 태그 이름을 릴리즈 제목으로 사용
+          tag_name: ${{ github.ref }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true # 자동으로 변경 사항 요약 생성
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

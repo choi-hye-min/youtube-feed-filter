@@ -73,9 +73,6 @@ async function processQueue() {
   
   isProcessingQueue = false;
   debugLog('Finished processing queue');
-  
-  // Scroll to top after completing all filter actions
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 /**

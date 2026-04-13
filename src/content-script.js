@@ -317,22 +317,31 @@ function applyFilter() {
     debugLog(`Evaluating ${videoElements.length} videos against threshold of ${filterState.threshold}`);
     
     videoElements.forEach((videoElement, index) => {
+      // Skip if already processed or queued
+      const state = videoElement.dataset.youtubeSkipProcessed;
+      if (state === 'queued' || state === 'done' || state === 'checked') return;
+
       // Track newly detected videos
-      if (!videoElement.dataset.youtubeSkipProcessed) {
+      if (!state) {
         stats.detected++;
         videoElement.dataset.youtubeSkipProcessed = 'detected';
       }
 
       const uploadAge = extractUploadAge(videoElement);
       
-      if (uploadAge !== null && uploadAge >= filterState.thresholdMs) {
-        // Video is older than or equal to threshold - mark as not interested
-        debugLog(`Video ${index}: ${uploadAge}ms old (matches/exceeds threshold)`);
-        markAsNotInterested(videoElement);
-      } else if (uploadAge !== null) {
-        debugLog(`Video ${index}: ${uploadAge}ms old (within threshold)`);
+      if (uploadAge !== null) {
+        if (uploadAge >= filterState.thresholdMs) {
+          // Video is older than or equal to threshold - mark as not interested
+          debugLog(`Video ${index}: ${uploadAge}ms old (matches/exceeds threshold)`);
+          markAsNotInterested(videoElement);
+        } else {
+          // Video is fresh - mark as checked to avoid redundant processing
+          debugLog(`Video ${index}: ${uploadAge}ms old (within threshold)`);
+          videoElement.dataset.youtubeSkipProcessed = 'checked';
+        }
       } else {
-        debugLog(`Video ${index}: Could not determine age`);
+        // Data might not be loaded yet (lazy loading / skeletons)
+        debugLog(`Video ${index}: Age not yet available, will retry...`);
       }
     });
   } catch (e) {
@@ -347,45 +356,48 @@ function initMutationObserver() {
   const observer = new MutationObserver((mutations) => {
     let shouldReapply = false;
     
-    mutations.forEach((mutation) => {
-      // Check if new video elements were added
+    for (const mutation of mutations) {
       if (mutation.addedNodes.length > 0) {
-        mutation.addedNodes.forEach((node) => {
+        for (const node of mutation.addedNodes) {
           if (node.nodeType === 1) { // Element node
-            if (node.matches && (node.matches('ytd-video-renderer') || node.matches('ytd-rich-item-renderer'))) {
+            if (node.matches && (node.matches('ytd-video-renderer') || node.matches('ytd-rich-item-renderer') || node.matches('ytd-rich-grid-row'))) {
               shouldReapply = true;
-            } else if (node.querySelector && (node.querySelector('ytd-video-renderer') || node.querySelector('ytd-rich-item-renderer'))) {
+              break;
+            }
+            if (node.querySelector && (node.querySelector('ytd-video-renderer') || node.querySelector('ytd-rich-item-renderer'))) {
               shouldReapply = true;
+              break;
             }
           }
-        });
+        }
       }
-    });
+      if (shouldReapply) break;
+    }
     
     if (shouldReapply) {
-      setTimeout(applyFilter, 100); // Debounce to avoid excessive evaluation
+      setTimeout(applyFilter, 100);
     }
   });
   
-  // Start observing the feed container
-  let feedContainer = document.querySelector('ytd-feed-renderer');
-  
-  if (!feedContainer) {
-    feedContainer = document.querySelector('ytd-browse-results-renderer') ||
-                   document.querySelector('ytd-two-column-browse-results-renderer') ||
-                   document.querySelector('#content') ||
-                   document.querySelector('#primary') ||
-                   document.querySelector('main');
-  }
-  
-  if (feedContainer) {
-    observer.observe(feedContainer, {
-      childList: true,
-      subtree: true,
-      attributes: false
-    });
-    debugLog('Mutation observer started on:', feedContainer.tagName);
-  }
+  // Watch more broadly since YouTube DOM can be highly dynamic
+  const config = { childList: true, subtree: true };
+  const target = document.querySelector('ytd-app') || document.body;
+  observer.observe(target, config);
+  debugLog('Mutation observer started on:', target.tagName);
+
+  // Fallback 1: Throttled Scroll Listener
+  let scrollTimeout;
+  window.addEventListener('scroll', () => {
+    if (!scrollTimeout) {
+      scrollTimeout = setTimeout(() => {
+        applyFilter();
+        scrollTimeout = null;
+      }, 500);
+    }
+  }, { passive: true });
+
+  // Fallback 2: Periodic check for lazy-loaded items that might miss observers
+  setInterval(applyFilter, 2000);
 }
 
 /**

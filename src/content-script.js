@@ -96,7 +96,9 @@ function performMarkAsNotInterested(videoElement) {
       videoElement.style.transform = 'scale(0.9)';
       
       setTimeout(() => {
-        videoElement.remove();
+        if (videoElement.parentNode) {
+          videoElement.remove();
+        }
         debugLog('Removed video element from DOM');
       }, 400);
 
@@ -130,37 +132,62 @@ const THRESHOLD_PRESETS = {
  */
 function extractUploadAge(videoElement) {
   try {
+    // 1. Check aria-label (often contains the most descriptive info)
+    const ariaLabel = videoElement.getAttribute('aria-label') || '';
+    const ageFromAria = findAgeInText(ariaLabel);
+    if (ageFromAria) return ageFromAria;
+
+    // 2. Check innerText
     const allText = videoElement.innerText || videoElement.textContent || '';
-    const lines = allText.split('\n').map(l => l.trim()).filter(Boolean);
-    
-    for (const line of lines) {
-      if (/\d+\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i.test(line)) {
-        return parseTimeToMs(line);
-      }
+    const ageFromText = findAgeInText(allText);
+    if (ageFromText) return ageFromText;
+
+    // 3. Deep search for specific metadata spans (for new layouts)
+    const metadataSpans = videoElement.querySelectorAll('span, yt-formatted-string, yt-attributed-string');
+    for (const span of metadataSpans) {
+      const age = findAgeInText(span.innerText || span.textContent);
+      if (age) return age;
     }
-    
-    const allElements = videoElement.querySelectorAll('*');
-    for (const elem of allElements) {
-      const ariaLabel = elem.getAttribute('aria-label') || '';
-      if (/\d+\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i.test(ariaLabel)) {
-        return parseTimeToMs(ariaLabel);
-      }
-    }
+
     return null;
   } catch (e) {
     return null;
   }
 }
 
+/**
+ * Helper to find age pattern in a string and parse it
+ */
+function findAgeInText(text) {
+  if (!text) return null;
+  // Improved regex to be more flexible with spaces and units
+  const timeRegex = /(\d+)\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i;
+  const match = text.match(timeRegex);
+  if (match) {
+    return parseTimeToMs(match[0]);
+  }
+  return null;
+}
+
 function parseTimeToMs(timeText) {
   if (!timeText) return 0;
+  // Clean up the string for parsing
   const match = timeText.toLowerCase().match(/(\d+)\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)?/);
   if (!match) return 0;
   
   const amount = parseInt(match[1], 10);
-  let unit = match[2].toLowerCase();
+  let unit = match[2].trim();
   
-  const unitMap = { '분': 'minute', '시간': 'hour', '일': 'day', '주': 'week', '달': 'month', '월': 'month', '년': 'year', '개월': 'month' };
+  const unitMap = { 
+    '분': 'minute', 
+    '시간': 'hour', 
+    '일': 'day', 
+    '주': 'week', 
+    '달': 'month', 
+    '월': 'month', 
+    '년': 'year', 
+    '개월': 'month' 
+  };
   if (unitMap[unit]) unit = unitMap[unit];
   
   const unitToMs = {
@@ -178,11 +205,20 @@ function parseTimeToMs(timeText) {
  * Evaluate all visible feed videos and apply filter
  */
 function applyFilter() {
-  debugLog('applyFilter triggered. Enabled:', filterState.enabled);
   if (!filterState.enabled) return;
   
-  const videoElements = document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer');
-  debugLog(`Found ${videoElements.length} video elements`);
+  // Expanded selectors to cover newer YouTube layouts and view-models
+  const selectors = [
+    'ytd-video-renderer', 
+    'ytd-rich-item-renderer', 
+    'ytd-rich-grid-media', 
+    'yt-lockup-view-model',
+    'ytd-grid-video-renderer',
+    'ytd-compact-video-renderer'
+  ];
+  
+  const videoElements = document.querySelectorAll(selectors.join(', '));
+  debugLog(`applyFilter triggered. Found ${videoElements.length} video elements`);
   
   videoElements.forEach((videoElement, index) => {
     const state = videoElement.dataset.youtubeSkipProcessed;
@@ -214,8 +250,15 @@ function initMutationObserver() {
     for (const mutation of mutations) {
       if (mutation.addedNodes.length > 0) {
         for (const node of mutation.addedNodes) {
-          if (node.nodeType === 1 && (node.matches?.('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-row') || node.querySelector?.('ytd-video-renderer, ytd-rich-item-renderer'))) {
-            shouldReapply = true; break;
+          if (node.nodeType === 1) {
+            // Check if the node itself is a video or contains one
+            const isVideo = node.matches?.('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ytd-rich-grid-row');
+            const containsVideo = node.querySelector?.('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model');
+            
+            if (isVideo || containsVideo) {
+              shouldReapply = true;
+              break;
+            }
           }
         }
       }

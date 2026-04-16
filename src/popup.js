@@ -12,16 +12,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusDiv = document.getElementById('status');
   const detectedCountSpan = document.getElementById('detected-count');
   const skippedCountSpan = document.getElementById('skipped-count');
+  const skippedList = document.getElementById('skipped-list');
   
-  console.log('[youtube_skip] Popup opened, loading state...');
+  let lastVideoCount = -1;
 
   // Load saved state from storage
   chrome.storage.local.get(['filter_threshold', 'filter_enabled', 'logging_enabled'], (result) => {
     const savedThreshold = result.filter_threshold || '1month';
     const savedEnabled = result.filter_enabled !== false;
     const savedLogging = result.logging_enabled === true;
-    
-    console.log('[youtube_skip] Loaded state:', { savedThreshold, savedEnabled, savedLogging });
     
     // Restore UI state
     thresholdSelect.value = savedThreshold;
@@ -47,9 +46,47 @@ document.addEventListener('DOMContentLoaded', () => {
           if (response) {
             detectedCountSpan.textContent = response.detected || 0;
             skippedCountSpan.textContent = response.skipped || 0;
+            
+            // Update skipped video list if count changed
+            if (response.skipped !== lastVideoCount) {
+              lastVideoCount = response.skipped;
+              renderSkippedList(response.skippedVideos || []);
+            }
           }
         });
       }
+    });
+  }
+
+  function renderSkippedList(videos) {
+    skippedList.innerHTML = '';
+    
+    if (videos.length === 0) {
+      const emptyMsg = document.createElement('li');
+      emptyMsg.className = 'skipped-item';
+      emptyMsg.style.color = '#999';
+      emptyMsg.style.textAlign = 'center';
+      emptyMsg.textContent = 'No videos skipped yet';
+      skippedList.appendChild(emptyMsg);
+      return;
+    }
+
+    videos.forEach(video => {
+      const li = document.createElement('li');
+      li.className = 'skipped-item';
+      
+      const title = document.createElement('div');
+      title.className = 'skipped-title';
+      title.title = video.title;
+      title.textContent = video.title;
+      
+      const age = document.createElement('div');
+      age.className = 'skipped-age';
+      age.textContent = `Uploaded: ${video.ageText}`;
+      
+      li.appendChild(title);
+      li.appendChild(age);
+      skippedList.appendChild(li);
     });
   }
   
@@ -57,7 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
   thresholdSelect.addEventListener('change', (e) => {
     const selectedThreshold = e.target.value;
     if (selectedThreshold) {
-      console.log('[youtube_skip] Threshold changed to:', selectedThreshold);
       chrome.storage.local.set({ filter_threshold: selectedThreshold }, () => {
         chrome.runtime.sendMessage({
           action: 'setThreshold',
@@ -74,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Filter toggle handler
   enableFilter.addEventListener('change', (e) => {
     const enabled = e.target.checked;
-    console.log('[youtube_skip] Filter toggle changed to:', enabled);
     chrome.storage.local.set({ filter_enabled: enabled }, () => {
       chrome.runtime.sendMessage({
         action: 'setFilterEnabled',
@@ -92,7 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Logging toggle handler
   enableLogging.addEventListener('change', (e) => {
     const enabled = e.target.checked;
-    console.log('[youtube_skip] Logging toggle changed to:', enabled);
     chrome.storage.local.set({ logging_enabled: enabled }, () => {
       chrome.runtime.sendMessage({
         action: 'setLoggingEnabled',
@@ -111,5 +145,3 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 });
-
-console.log('[youtube_skip] Popup script loaded');

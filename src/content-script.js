@@ -16,7 +16,8 @@ let filterState = {
 // Stats tracking
 let stats = {
   detected: 0,
-  skipped: 0
+  skipped: 0,
+  skippedVideos: [] // Array of {title, ageText}
 };
 
 // Queue for sequential "Not interested" actions
@@ -35,12 +36,18 @@ function debugLog(...args) {
 /**
  * Add a video to the action queue
  */
-function queueNotInterested(videoElement) {
+function queueNotInterested(videoElement, videoInfo) {
   if (videoElement.dataset.youtubeSkipProcessed === 'queued' || 
       videoElement.dataset.youtubeSkipProcessed === 'done') return;
   
   videoElement.dataset.youtubeSkipProcessed = 'queued';
   stats.skipped++;
+  
+  // Save video info for popup UI (keep last 50)
+  stats.skippedVideos.unshift(videoInfo);
+  if (stats.skippedVideos.length > 50) {
+    stats.skippedVideos.pop();
+  }
   
   actionQueue.push(videoElement);
   if (!isProcessingQueue) {
@@ -113,8 +120,8 @@ function performMarkAsNotInterested(videoElement) {
 /**
  * Trigger "Not interested" action on a video element
  */
-function markAsNotInterested(videoElement) {
-  queueNotInterested(videoElement);
+function markAsNotInterested(videoElement, videoInfo) {
+  queueNotInterested(videoElement, videoInfo);
   return true;
 }
 
@@ -132,17 +139,14 @@ const THRESHOLD_PRESETS = {
  */
 function extractUploadAge(videoElement) {
   try {
-    // 1. Check aria-label (often contains the most descriptive info)
     const ariaLabel = videoElement.getAttribute('aria-label') || '';
     const ageFromAria = findAgeInText(ariaLabel);
     if (ageFromAria) return ageFromAria;
 
-    // 2. Check innerText
     const allText = videoElement.innerText || videoElement.textContent || '';
     const ageFromText = findAgeInText(allText);
     if (ageFromText) return ageFromText;
 
-    // 3. Deep search for specific metadata spans (for new layouts)
     const metadataSpans = videoElement.querySelectorAll('span, yt-formatted-string, yt-attributed-string');
     for (const span of metadataSpans) {
       const age = findAgeInText(span.innerText || span.textContent);
@@ -160,18 +164,19 @@ function extractUploadAge(videoElement) {
  */
 function findAgeInText(text) {
   if (!text) return null;
-  // Improved regex to be more flexible with spaces and units
   const timeRegex = /(\d+)\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i;
   const match = text.match(timeRegex);
   if (match) {
-    return parseTimeToMs(match[0]);
+    return {
+      ms: parseTimeToMs(match[0]),
+      text: match[0]
+    };
   }
   return null;
 }
 
 function parseTimeToMs(timeText) {
   if (!timeText) return 0;
-  // Clean up the string for parsing
   const match = timeText.toLowerCase().match(/(\d+)\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)?/);
   if (!match) return 0;
   
@@ -202,12 +207,30 @@ function parseTimeToMs(timeText) {
 }
 
 /**
+ * Extract video title
+ */
+function extractVideoTitle(videoElement) {
+  try {
+    // Standard layout title
+    const titleElem = videoElement.querySelector('#video-title, #video-title-link, .yt-lockup-metadata-view-model-wiz__title');
+    if (titleElem) return titleElem.innerText || titleElem.textContent;
+
+    // View model title
+    const vmTitle = videoElement.querySelector('.ytAttributedStringHost');
+    if (vmTitle) return vmTitle.innerText || vmTitle.textContent;
+
+    return 'Unknown Title';
+  } catch (e) {
+    return 'Unknown Title';
+  }
+}
+
+/**
  * Evaluate all visible feed videos and apply filter
  */
 function applyFilter() {
   if (!filterState.enabled) return;
   
-  // Expanded selectors to cover newer YouTube layouts and view-models
   const selectors = [
     'ytd-video-renderer', 
     'ytd-rich-item-renderer', 
@@ -229,11 +252,16 @@ function applyFilter() {
       videoElement.dataset.youtubeSkipProcessed = 'detected';
     }
 
-    const uploadAge = extractUploadAge(videoElement);
-    if (uploadAge !== null) {
-      if (uploadAge >= filterState.thresholdMs) {
-        debugLog(`Video ${index}: Marking as not interested (age: ${uploadAge}ms)`);
-        markAsNotInterested(videoElement);
+    const ageData = extractUploadAge(videoElement);
+    if (ageData !== null) {
+      if (ageData.ms >= filterState.thresholdMs) {
+        const title = extractVideoTitle(videoElement);
+        const videoInfo = {
+          title: title.trim(),
+          ageText: ageData.text
+        };
+        debugLog(`Video ${index}: Marking as not interested (age: ${ageData.text})`);
+        markAsNotInterested(videoElement, videoInfo);
       } else {
         videoElement.dataset.youtubeSkipProcessed = 'checked';
       }
@@ -251,7 +279,6 @@ function initMutationObserver() {
       if (mutation.addedNodes.length > 0) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === 1) {
-            // Check if the node itself is a video or contains one
             const isVideo = node.matches?.('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ytd-rich-grid-row');
             const containsVideo = node.querySelector?.('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model');
             

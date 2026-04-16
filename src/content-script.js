@@ -50,6 +50,9 @@ function queueNotInterested(videoElement, videoInfo, videoId) {
   stats.skippedVideos.unshift(videoInfo);
   if (stats.skippedVideos.length > 50) stats.skippedVideos.pop();
   
+  // Update badge
+  chrome.runtime.sendMessage({ action: 'updateBadge', count: stats.skipped });
+  
   actionQueue.push({ element: videoElement, id: videoId });
   if (!isProcessingQueue) {
     processQueue();

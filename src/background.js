@@ -87,10 +87,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         enabled: result[STORAGE_KEYS.ENABLED] !== false,
         logging: result[STORAGE_KEYS.LOGGING] === true
       };
-      console.log('[youtube_skip] Background: Sending state', state);
       sendResponse(state);
     });
     return true; // Will respond asynchronously
+  } else if (request.action === 'updateBadge') {
+    const count = request.count > 0 ? request.count.toString() : '';
+    chrome.action.setBadgeText({
+      text: count,
+      tabId: sender.tab.id
+    });
+    chrome.action.setBadgeBackgroundColor({
+      color: '#d93025',
+      tabId: sender.tab.id
+    });
+    return false;
   }
 });
 

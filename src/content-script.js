@@ -24,10 +24,12 @@ let actionQueue = [];
 let isProcessingQueue = false;
 
 /**
- * Custom logger
+ * Custom logger that respects loggingEnabled state
  */
 function debugLog(...args) {
-  console.log('[youtube_skip]', ...args);
+  if (filterState.loggingEnabled) {
+    console.log('[youtube_skip]', ...args);
+  }
 }
 
 /**
@@ -78,14 +80,17 @@ async function processQueue() {
 function performMarkAsNotInterested(videoElement) {
   return new Promise((resolve) => {
     try {
+      // Assign a temporary unique ID to find it in the MAIN world
       const videoId = 'yt-skip-' + Math.random().toString(36).substr(2, 9);
       videoElement.dataset.youtubeSkipId = videoId;
 
+      // Dispatch event to the injected script in MAIN world
       const event = new CustomEvent('youtube-skip-action', {
         detail: { videoId: videoId }
       });
       window.dispatchEvent(event);
       
+      // Smooth fade-out and remove
       videoElement.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
       videoElement.style.opacity = '0';
       videoElement.style.transform = 'scale(0.9)';
@@ -170,14 +175,14 @@ function parseTimeToMs(timeText) {
 }
 
 /**
- * Evaluate all visible feed videos
+ * Evaluate all visible feed videos and apply filter
  */
 function applyFilter() {
-  console.log('[youtube_skip] applyFilter triggered. Enabled:', filterState.enabled);
+  debugLog('applyFilter triggered. Enabled:', filterState.enabled);
   if (!filterState.enabled) return;
   
   const videoElements = document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer');
-  console.log(`[youtube_skip] Found ${videoElements.length} video elements`);
+  debugLog(`Found ${videoElements.length} video elements`);
   
   videoElements.forEach((videoElement, index) => {
     const state = videoElement.dataset.youtubeSkipProcessed;
@@ -200,6 +205,9 @@ function applyFilter() {
   });
 }
 
+/**
+ * DOM Mutation Observer to detect new feed items
+ */
 function initMutationObserver() {
   const observer = new MutationObserver((mutations) => {
     let shouldReapply = false;
@@ -218,7 +226,7 @@ function initMutationObserver() {
   
   const target = document.querySelector('ytd-app') || document.body;
   observer.observe(target, { childList: true, subtree: true });
-  console.log('[youtube_skip] MutationObserver started');
+  debugLog('MutationObserver started');
 
   window.addEventListener('scroll', () => {
     clearTimeout(window.scrollTimer);
@@ -228,41 +236,61 @@ function initMutationObserver() {
   setInterval(applyFilter, 3000);
 }
 
+/**
+ * Inject the helper script into the MAIN world
+ */
 function injectMainScript() {
   try {
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('inject.js');
     (document.head || document.documentElement).appendChild(script);
     script.onload = () => script.remove();
-    console.log('[youtube_skip] inject.js injected');
+    debugLog('inject.js injected');
   } catch (e) {
     console.error('[youtube_skip] Injection failed:', e);
   }
 }
 
+/**
+ * Handle messages from background/popup script
+ */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'applyFilter') {
     chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
-      Object.assign(filterState, response);
-      filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
-      applyFilter();
+      if (response) {
+        filterState.threshold = response.threshold;
+        filterState.enabled = response.enabled;
+        filterState.loggingEnabled = response.logging;
+        filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
+        applyFilter();
+      }
       sendResponse({ success: true });
     });
     return true;
   } else if (request.action === 'getStats') {
     sendResponse(stats);
     return false;
+  } else if (request.action === 'setLoggingEnabled') {
+    filterState.loggingEnabled = request.enabled;
+    debugLog('Logging state changed to:', request.enabled);
+    sendResponse({ success: true });
+    return false;
   }
 });
 
+/**
+ * Initialize on page load
+ */
 function init() {
-  console.log('[youtube_skip] Initializing...');
   injectMainScript();
   chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
-    console.log('[youtube_skip] State loaded:', response);
     if (response) {
-      Object.assign(filterState, response);
+      filterState.threshold = response.threshold;
+      filterState.enabled = response.enabled;
+      filterState.loggingEnabled = response.logging;
       filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
+      
+      debugLog('State loaded:', response);
       initMutationObserver();
       applyFilter();
     }
@@ -274,4 +302,3 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
-console.log('[youtube_skip] Content script loaded');

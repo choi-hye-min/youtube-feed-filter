@@ -11,6 +11,12 @@
   "host_permissions": [
     "https://www.youtube.com/*"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": ["https://www.youtube.com/*"]
+    }
+  ],
   "action": {
     "default_title": "YouTube Feed Filter",
     "default_popup": "popup.html"

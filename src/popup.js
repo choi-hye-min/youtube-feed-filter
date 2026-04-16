@@ -137,11 +137,11 @@ document.addEventListener('DOMContentLoaded', () => {
   
   function updateStatus(threshold, enabled) {
     if (!enabled) {
-      statusDiv.textContent = 'Status: Filter disabled';
-      statusDiv.style.color = '#999';
+      statusDiv.textContent = '• Filter Inactive';
+      statusDiv.style.color = 'rgba(255, 255, 255, 0.5)';
     } else {
-      statusDiv.textContent = `Status: Active (${threshold} filter)`;
-      statusDiv.style.color = '#0d652d';
+      statusDiv.textContent = `• Filtering ${threshold}+ content`;
+      statusDiv.style.color = 'var(--accent-color)';
     }
   }
 });

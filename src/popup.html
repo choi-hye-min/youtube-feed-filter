@@ -7,53 +7,55 @@
 </head>
 <body>
     <div id="popup-container">
-        <h1>YouTube Feed Filter</h1>
+        <h1>YOUTUBE SKIP</h1>
         
         <div id="filter-control">
-            <label for="threshold-select">Time Threshold:</label>
+            <label for="threshold-select">Filter Older Than</label>
             <select id="threshold-select">
-                <option value="">-- Select a threshold --</option>
-                <option value="1week">1 week</option>
-                <option value="2weeks">2 weeks</option>
-                <option value="1month">1 month</option>
-                <option value="3months">3 months</option>
-                <option value="6months">6 months</option>
+                <option value="">-- Choose Threshold --</option>
+                <option value="1week">1 Week</option>
+                <option value="2weeks">2 Weeks</option>
+                <option value="1month">1 Month</option>
+                <option value="3months">3 Months</option>
+                <option value="6months">6 Months</option>
             </select>
         </div>
         
-        <div id="filter-toggle">
-            <label for="enable-filter">
-                <input type="checkbox" id="enable-filter" checked>
-                Enable Filter
-            </label>
-        </div>
-
-        <div id="logging-toggle" style="margin-top: 5px;">
-            <label for="enable-logging">
-                <input type="checkbox" id="enable-logging">
-                Enable Console Logs
-            </label>
-        </div>
-
-        <div id="stats-container" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
-            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
-                <span>Detected Videos:</span>
-                <span id="detected-count" style="font-weight: bold;">0</span>
+        <div id="toggles-container" style="display: flex; flex-direction: column; gap: 4px;">
+            <div id="filter-toggle">
+                <label for="enable-filter">
+                    <input type="checkbox" id="enable-filter" checked>
+                    Enable Filtering
+                </label>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 13px;">
-                <span>Skipped Videos:</span>
-                <span id="skipped-count" style="font-weight: bold; color: #d93025;">0</span>
+
+            <div id="logging-toggle">
+                <label for="enable-logging">
+                    <input type="checkbox" id="enable-logging">
+                    Debug Logging
+                </label>
+            </div>
+        </div>
+
+        <div id="stats-container">
+            <div class="stat-row">
+                <span>Detected</span>
+                <span id="detected-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span>Skipped</span>
+                <span id="skipped-count">0</span>
             </div>
         </div>
 
         <div id="skipped-list-container">
-            <h2 style="font-size: 14px; margin: 15px 0 8px 0;">Recent Skipped Videos</h2>
+            <h2>Recent Activity</h2>
             <ul id="skipped-list">
-                <!-- Skipped videos will appear here -->
+                <!-- Videos will appear here -->
             </ul>
         </div>
         
-        <div id="status" style="margin-top: 10px; font-size: 12px; color: #666;"></div>
+        <div id="status"></div>
     </div>
     
     <script src="popup.js"></script>

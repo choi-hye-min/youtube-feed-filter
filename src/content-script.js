@@ -20,12 +20,15 @@ let stats = {
   skippedVideos: [] // Array of {title, ageText}
 };
 
+// Set to track processed video IDs (to handle YouTube's element recycling)
+const processedVideoIds = new Set();
+
 // Queue for sequential "Not interested" actions
 let actionQueue = [];
 let isProcessingQueue = false;
 
 /**
- * Custom logger that respects loggingEnabled state
+ * Custom logger
  */
 function debugLog(...args) {
   if (filterState.loggingEnabled) {
@@ -36,20 +39,18 @@ function debugLog(...args) {
 /**
  * Add a video to the action queue
  */
-function queueNotInterested(videoElement, videoInfo) {
-  if (videoElement.dataset.youtubeSkipProcessed === 'queued' || 
-      videoElement.dataset.youtubeSkipProcessed === 'done') return;
+function queueNotInterested(videoElement, videoInfo, videoId) {
+  const status = videoElement.dataset.youtubeSkipProcessed;
+  if (status === 'queued' || status === 'done') return;
   
   videoElement.dataset.youtubeSkipProcessed = 'queued';
+  if (videoId) processedVideoIds.add(videoId);
+  
   stats.skipped++;
-  
-  // Save video info for popup UI (keep last 50)
   stats.skippedVideos.unshift(videoInfo);
-  if (stats.skippedVideos.length > 50) {
-    stats.skippedVideos.pop();
-  }
+  if (stats.skippedVideos.length > 50) stats.skippedVideos.pop();
   
-  actionQueue.push(videoElement);
+  actionQueue.push({ element: videoElement, id: videoId });
   if (!isProcessingQueue) {
     processQueue();
   }
@@ -65,11 +66,11 @@ async function processQueue() {
   debugLog(`Processing queue of ${actionQueue.length} videos`);
   
   while (actionQueue.length > 0) {
-    const videoElement = actionQueue.shift();
+    const item = actionQueue.shift();
     try {
-      const success = await performMarkAsNotInterested(videoElement);
+      const success = await performMarkAsNotInterested(item.element);
       if (success) {
-        videoElement.dataset.youtubeSkipProcessed = 'done';
+        item.element.dataset.youtubeSkipProcessed = 'done';
       }
       await new Promise(resolve => setTimeout(resolve, 200));
     } catch (e) {
@@ -82,31 +83,28 @@ async function processQueue() {
 }
 
 /**
- * Actual implementation of marking as not interested by bridging to the MAIN world
+ * Actual implementation of marking as not interested
  */
 function performMarkAsNotInterested(videoElement) {
   return new Promise((resolve) => {
     try {
-      // Assign a temporary unique ID to find it in the MAIN world
       const videoId = 'yt-skip-' + Math.random().toString(36).substr(2, 9);
       videoElement.dataset.youtubeSkipId = videoId;
 
-      // Dispatch event to the injected script in MAIN world
       const event = new CustomEvent('youtube-skip-action', {
         detail: { videoId: videoId }
       });
       window.dispatchEvent(event);
       
-      // Smooth fade-out and remove
-      videoElement.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
-      videoElement.style.opacity = '0';
-      videoElement.style.transform = 'scale(0.9)';
+      // Visual feedback and permanent hiding
+      videoElement.style.setProperty('display', 'none', 'important');
+      videoElement.setAttribute('hidden', '');
       
+      // Try to remove but also keep hidden in case YouTube re-inserts
       setTimeout(() => {
         if (videoElement.parentNode) {
           videoElement.remove();
         }
-        debugLog('Removed video element from DOM');
       }, 400);
 
       resolve(true);
@@ -118,14 +116,14 @@ function performMarkAsNotInterested(videoElement) {
 }
 
 /**
- * Trigger "Not interested" action on a video element
+ * Trigger "Not interested" action
  */
-function markAsNotInterested(videoElement, videoInfo) {
-  queueNotInterested(videoElement, videoInfo);
+function markAsNotInterested(videoElement, videoInfo, videoId) {
+  queueNotInterested(videoElement, videoInfo, videoId);
   return true;
 }
 
-// Threshold value definitions (in milliseconds)
+// Threshold value definitions
 const THRESHOLD_PRESETS = {
   '1week': 7 * 24 * 60 * 60 * 1000,
   '2weeks': 14 * 24 * 60 * 60 * 1000,
@@ -133,6 +131,18 @@ const THRESHOLD_PRESETS = {
   '3months': 90 * 24 * 60 * 60 * 1000,
   '6months': 180 * 24 * 60 * 60 * 1000
 };
+
+/**
+ * Get video ID from href
+ */
+function getVideoId(videoElement) {
+  const link = videoElement.querySelector('a[href*="/watch?v="]');
+  if (link) {
+    const url = new URL(link.href, window.location.origin);
+    return url.searchParams.get('v');
+  }
+  return null;
+}
 
 /**
  * Extract upload age
@@ -152,25 +162,18 @@ function extractUploadAge(videoElement) {
       const age = findAgeInText(span.innerText || span.textContent);
       if (age) return age;
     }
-
     return null;
   } catch (e) {
     return null;
   }
 }
 
-/**
- * Helper to find age pattern in a string and parse it
- */
 function findAgeInText(text) {
   if (!text) return null;
   const timeRegex = /(\d+)\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i;
   const match = text.match(timeRegex);
   if (match) {
-    return {
-      ms: parseTimeToMs(match[0]),
-      text: match[0]
-    };
+    return { ms: parseTimeToMs(match[0]), text: match[0] };
   }
   return null;
 }
@@ -182,58 +185,35 @@ function parseTimeToMs(timeText) {
   
   const amount = parseInt(match[1], 10);
   let unit = match[2].trim();
-  
-  const unitMap = { 
-    '분': 'minute', 
-    '시간': 'hour', 
-    '일': 'day', 
-    '주': 'week', 
-    '달': 'month', 
-    '월': 'month', 
-    '년': 'year', 
-    '개월': 'month' 
-  };
+  const unitMap = { '분': 'minute', '시간': 'hour', '일': 'day', '주': 'week', '달': 'month', '월': 'month', '년': 'year', '개월': 'month' };
   if (unitMap[unit]) unit = unitMap[unit];
   
   const unitToMs = {
-    'minute': 60 * 1000,
-    'hour': 60 * 60 * 1000,
-    'day': 24 * 60 * 60 * 1000,
-    'week': 7 * 24 * 60 * 60 * 1000,
-    'month': 30 * 24 * 60 * 60 * 1000,
-    'year': 365 * 24 * 60 * 60 * 1000
+    'minute': 60 * 1000, 'hour': 60 * 60 * 1000, 'day': 24 * 60 * 60 * 1000,
+    'week': 7 * 24 * 60 * 60 * 1000, 'month': 30 * 24 * 60 * 60 * 1000, 'year': 365 * 24 * 60 * 60 * 1000
   };
   return amount * (unitToMs[unit] || 0);
 }
 
-/**
- * Extract video title
- */
 function extractVideoTitle(videoElement) {
   try {
-    // Standard layout title
     const titleElem = videoElement.querySelector('#video-title, #video-title-link, .yt-lockup-metadata-view-model-wiz__title');
     if (titleElem) return titleElem.innerText || titleElem.textContent;
-
-    // View model title
     const vmTitle = videoElement.querySelector('.ytAttributedStringHost');
     if (vmTitle) return vmTitle.innerText || vmTitle.textContent;
-
     return 'Unknown Title';
-  } catch (e) {
-    return 'Unknown Title';
-  }
+  } catch (e) { return 'Unknown Title'; }
 }
 
 /**
- * Evaluate all visible feed videos and apply filter
+ * Main filtering logic
  */
 function applyFilter() {
   if (!filterState.enabled) return;
   
   const selectors = [
-    'ytd-video-renderer', 
     'ytd-rich-item-renderer', 
+    'ytd-video-renderer', 
     'ytd-rich-grid-media', 
     'yt-lockup-view-model',
     'ytd-grid-video-renderer',
@@ -241,37 +221,53 @@ function applyFilter() {
   ];
   
   const videoElements = document.querySelectorAll(selectors.join(', '));
-  debugLog(`applyFilter triggered. Found ${videoElements.length} video elements`);
   
-  videoElements.forEach((videoElement, index) => {
-    const state = videoElement.dataset.youtubeSkipProcessed;
+  videoElements.forEach((videoElement) => {
+    // 1. Target the actual container if we're on a view-model
+    let targetElement = videoElement;
+    if (videoElement.tagName.toLowerCase() === 'yt-lockup-view-model') {
+      targetElement = videoElement.closest('ytd-rich-item-renderer, ytd-video-renderer') || videoElement;
+    }
+
+    const videoId = getVideoId(targetElement);
+    const lastSeenId = targetElement.dataset.youtubeSkipVideoId;
+
+    // 2. If node is recycled (video ID changed), reset processing state
+    if (videoId && lastSeenId && videoId !== lastSeenId) {
+      targetElement.dataset.youtubeSkipProcessed = '';
+      targetElement.style.display = '';
+      targetElement.removeAttribute('hidden');
+    }
+    
+    if (videoId) targetElement.dataset.youtubeSkipVideoId = videoId;
+
+    // 3. Skip if already done for this specific video ID
+    if (videoId && processedVideoIds.has(videoId)) {
+      targetElement.style.setProperty('display', 'none', 'important');
+      targetElement.setAttribute('hidden', '');
+      return;
+    }
+
+    const state = targetElement.dataset.youtubeSkipProcessed;
     if (state === 'queued' || state === 'done' || state === 'checked') return;
 
     if (!state) {
       stats.detected++;
-      videoElement.dataset.youtubeSkipProcessed = 'detected';
+      targetElement.dataset.youtubeSkipProcessed = 'detected';
     }
 
-    const ageData = extractUploadAge(videoElement);
+    const ageData = extractUploadAge(targetElement);
     if (ageData !== null) {
       if (ageData.ms >= filterState.thresholdMs) {
-        const title = extractVideoTitle(videoElement);
-        const videoInfo = {
-          title: title.trim(),
-          ageText: ageData.text
-        };
-        debugLog(`Video ${index}: Marking as not interested (age: ${ageData.text})`);
-        markAsNotInterested(videoElement, videoInfo);
+        const title = extractVideoTitle(targetElement);
+        markAsNotInterested(targetElement, { title: title.trim(), ageText: ageData.text }, videoId);
       } else {
-        videoElement.dataset.youtubeSkipProcessed = 'checked';
+        targetElement.dataset.youtubeSkipProcessed = 'checked';
       }
     }
   });
 }
 
-/**
- * DOM Mutation Observer to detect new feed items
- */
 function initMutationObserver() {
   const observer = new MutationObserver((mutations) => {
     let shouldReapply = false;
@@ -279,12 +275,9 @@ function initMutationObserver() {
       if (mutation.addedNodes.length > 0) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === 1) {
-            const isVideo = node.matches?.('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ytd-rich-grid-row');
-            const containsVideo = node.querySelector?.('ytd-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model');
-            
-            if (isVideo || containsVideo) {
-              shouldReapply = true;
-              break;
+            if (node.matches?.('ytd-rich-item-renderer, ytd-video-renderer, yt-lockup-view-model, ytd-rich-grid-row') || 
+                node.querySelector?.('ytd-rich-item-renderer, ytd-video-renderer, yt-lockup-view-model')) {
+              shouldReapply = true; break;
             }
           }
         }
@@ -296,8 +289,7 @@ function initMutationObserver() {
   
   const target = document.querySelector('ytd-app') || document.body;
   observer.observe(target, { childList: true, subtree: true });
-  debugLog('MutationObserver started');
-
+  
   window.addEventListener('scroll', () => {
     clearTimeout(window.scrollTimer);
     window.scrollTimer = setTimeout(applyFilter, 500);
@@ -306,31 +298,20 @@ function initMutationObserver() {
   setInterval(applyFilter, 3000);
 }
 
-/**
- * Inject the helper script into the MAIN world
- */
 function injectMainScript() {
   try {
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('inject.js');
     (document.head || document.documentElement).appendChild(script);
     script.onload = () => script.remove();
-    debugLog('inject.js injected');
-  } catch (e) {
-    console.error('[youtube_skip] Injection failed:', e);
-  }
+  } catch (e) {}
 }
 
-/**
- * Handle messages from background/popup script
- */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'applyFilter') {
     chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
       if (response) {
-        filterState.threshold = response.threshold;
-        filterState.enabled = response.enabled;
-        filterState.loggingEnabled = response.logging;
+        Object.assign(filterState, response);
         filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
         applyFilter();
       }
@@ -340,27 +321,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'getStats') {
     sendResponse(stats);
     return false;
-  } else if (request.action === 'setLoggingEnabled') {
-    filterState.loggingEnabled = request.enabled;
-    debugLog('Logging state changed to:', request.enabled);
-    sendResponse({ success: true });
-    return false;
   }
 });
 
-/**
- * Initialize on page load
- */
 function init() {
   injectMainScript();
+  // Inject CSS to ensure hidden elements STAY hidden
+  const style = document.createElement('style');
+  style.textContent = `
+    [data-youtube-skip-processed="done"], 
+    [data-youtube-skip-processed="queued"],
+    ytd-rich-item-renderer[hidden],
+    ytd-video-renderer[hidden] { 
+      display: none !important; 
+    }
+  `;
+  document.head.appendChild(style);
+
   chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
     if (response) {
-      filterState.threshold = response.threshold;
-      filterState.enabled = response.enabled;
-      filterState.loggingEnabled = response.logging;
+      Object.assign(filterState, response);
       filterState.thresholdMs = THRESHOLD_PRESETS[response.threshold];
-      
-      debugLog('State loaded:', response);
       initMutationObserver();
       applyFilter();
     }

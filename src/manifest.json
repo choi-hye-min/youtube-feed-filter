@@ -5,8 +5,7 @@
   "description": "Filter YouTube main page feed videos by upload date. Mark videos older than your selected threshold.",
   "permissions": [
     "tabs",
-    "storage",
-    "scripting"
+    "storage"
   ],
   "host_permissions": [
     "https://www.youtube.com/*"

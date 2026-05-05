@@ -7,55 +7,82 @@
 </head>
 <body>
     <div id="popup-container">
-        <h1>YOUTUBE SKIP</h1>
-        
-        <div id="filter-control">
-            <label for="threshold-select">Filter Older Than</label>
-            <select id="threshold-select">
-                <option value="">-- Choose Threshold --</option>
-                <option value="1week">1 Week</option>
-                <option value="2weeks">2 Weeks</option>
-                <option value="1month">1 Month</option>
-                <option value="3months">3 Months</option>
-                <option value="6months">6 Months</option>
-            </select>
-        </div>
-        
-        <div id="toggles-container" style="display: flex; flex-direction: column; gap: 4px;">
-            <div id="filter-toggle">
-                <label for="enable-filter">
-                    <input type="checkbox" id="enable-filter" checked>
-                    Enable Filtering
-                </label>
+        <div class="ambient ambient-a"></div>
+        <div class="ambient ambient-b"></div>
+        <div class="ambient ambient-c"></div>
+
+        <header class="hero-panel glass-panel">
+            <div class="hero-copy">
+                <p class="eyebrow">Smart feed control</p>
+                <h1>YOUTUBE SKIP</h1>
+                <p class="hero-description">Trim older uploads from your YouTube feed with a softer, clearer control surface.</p>
+            </div>
+            <div id="status" class="status-pill"></div>
+        </header>
+
+        <section class="glass-panel controls-panel">
+            <div id="filter-control" class="control-block">
+                <label for="threshold-select">Filter Older Than</label>
+                <select id="threshold-select">
+                    <option value="">-- Choose Threshold --</option>
+                    <option value="1day">1 Day</option>
+                    <option value="2days">2 Days</option>
+                    <option value="3days">3 Days</option>
+                    <option value="4days">4 Days</option>
+                    <option value="5days">5 Days</option>
+                    <option value="1week">1 Week</option>
+                    <option value="2weeks">2 Weeks</option>
+                    <option value="1month">1 Month</option>
+                    <option value="3months">3 Months</option>
+                    <option value="6months">6 Months</option>
+                </select>
             </div>
 
-            <div id="logging-toggle">
-                <label for="enable-logging">
-                    <input type="checkbox" id="enable-logging">
-                    Debug Logging
-                </label>
-            </div>
-        </div>
+            <div id="toggles-container">
+                <div id="filter-toggle" class="toggle-row">
+                    <div class="toggle-copy">
+                        <span class="toggle-title">Enable Filtering</span>
+                        <span class="toggle-subtitle">Hide videos older than your chosen threshold.</span>
+                    </div>
+                    <label class="switch" for="enable-filter" aria-label="Enable Filtering">
+                        <input type="checkbox" id="enable-filter" checked>
+                        <span class="switch-ui"></span>
+                    </label>
+                </div>
 
-        <div id="stats-container">
-            <div class="stat-row">
-                <span>Detected</span>
-                <span id="detected-count">0</span>
+                <div id="logging-toggle" class="toggle-row">
+                    <div class="toggle-copy">
+                        <span class="toggle-title">Debug Logging</span>
+                        <span class="toggle-subtitle">Keep developer logs available while tuning behavior.</span>
+                    </div>
+                    <label class="switch" for="enable-logging" aria-label="Debug Logging">
+                        <input type="checkbox" id="enable-logging">
+                        <span class="switch-ui"></span>
+                    </label>
+                </div>
             </div>
-            <div class="stat-row">
-                <span>Skipped</span>
-                <span id="skipped-count">0</span>
-            </div>
-        </div>
+        </section>
 
-        <div id="skipped-list-container">
-            <h2>Recent Activity</h2>
+        <section id="stats-container" class="glass-panel stats-panel">
+            <div class="stat-card">
+                <span class="stat-label">Detected</span>
+                <span id="detected-count" class="stat-value">0</span>
+            </div>
+            <div class="stat-card accent-card">
+                <span class="stat-label">Skipped</span>
+                <span id="skipped-count" class="stat-value">0</span>
+            </div>
+        </section>
+
+        <section id="skipped-list-container" class="glass-panel activity-panel">
+            <div class="section-heading">
+                <h2>Recent Activity</h2>
+                <span class="section-kicker">Live session feed</span>
+            </div>
             <ul id="skipped-list">
                 <!-- Videos will appear here -->
             </ul>
-        </div>
-        
-        <div id="status"></div>
+        </section>
     </div>
     
     <script src="popup.js"></script>

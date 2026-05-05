@@ -13,6 +13,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const detectedCountSpan = document.getElementById('detected-count');
   const skippedCountSpan = document.getElementById('skipped-count');
   const skippedList = document.getElementById('skipped-list');
+  const thresholdLabels = {
+    '1day': '1 Day',
+    '2days': '2 Days',
+    '3days': '3 Days',
+    '4days': '4 Days',
+    '5days': '5 Days',
+    '1week': '1 Week',
+    '2weeks': '2 Weeks',
+    '1month': '1 Month',
+    '3months': '3 Months',
+    '6months': '6 Months'
+  };
   
   let lastVideoCount = -1;
 
@@ -63,9 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (videos.length === 0) {
       const emptyMsg = document.createElement('li');
-      emptyMsg.className = 'skipped-item';
-      emptyMsg.style.color = '#999';
-      emptyMsg.style.textAlign = 'center';
+      emptyMsg.className = 'skipped-item empty-state';
       emptyMsg.textContent = 'No videos skipped yet';
       skippedList.appendChild(emptyMsg);
       return;
@@ -136,12 +146,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   function updateStatus(threshold, enabled) {
+    statusDiv.classList.toggle('is-inactive', !enabled);
+
     if (!enabled) {
-      statusDiv.textContent = '• Filter Inactive';
-      statusDiv.style.color = 'rgba(255, 255, 255, 0.5)';
+      statusDiv.textContent = 'Filter Inactive';
     } else {
-      statusDiv.textContent = `• Filtering ${threshold}+ content`;
-      statusDiv.style.color = 'var(--accent-color)';
+      const thresholdLabel = thresholdLabels[threshold] || threshold;
+      statusDiv.textContent = `Filtering ${thresholdLabel}+ content`;
     }
   }
 });

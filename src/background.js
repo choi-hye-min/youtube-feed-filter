@@ -14,6 +14,11 @@ const STORAGE_KEYS = {
 
 // Threshold value definitions (in milliseconds)
 const THRESHOLD_PRESETS = {
+  '1day': 1 * 24 * 60 * 60 * 1000,
+  '2days': 2 * 24 * 60 * 60 * 1000,
+  '3days': 3 * 24 * 60 * 60 * 1000,
+  '4days': 4 * 24 * 60 * 60 * 1000,
+  '5days': 5 * 24 * 60 * 60 * 1000,
   '1week': 7 * 24 * 60 * 60 * 1000,
   '2weeks': 14 * 24 * 60 * 60 * 1000,
   '1month': 30 * 24 * 60 * 60 * 1000,

@@ -12,7 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusDiv = document.getElementById('status');
   const detectedCountSpan = document.getElementById('detected-count');
   const skippedCountSpan = document.getElementById('skipped-count');
-  const skippedList = document.getElementById('skipped-list');
   const thresholdLabels = {
     '1day': '1 Day',
     '2days': '2 Days',
@@ -26,8 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
     '6months': '6 Months'
   };
   
-  let lastVideoCount = -1;
-
   // Load saved state from storage
   chrome.storage.local.get(['filter_threshold', 'filter_enabled', 'logging_enabled'], (result) => {
     const savedThreshold = result.filter_threshold || '1month';
@@ -58,45 +55,9 @@ document.addEventListener('DOMContentLoaded', () => {
           if (response) {
             detectedCountSpan.textContent = response.detected || 0;
             skippedCountSpan.textContent = response.skipped || 0;
-            
-            // Update skipped video list if count changed
-            if (response.skipped !== lastVideoCount) {
-              lastVideoCount = response.skipped;
-              renderSkippedList(response.skippedVideos || []);
-            }
           }
         });
       }
-    });
-  }
-
-  function renderSkippedList(videos) {
-    skippedList.innerHTML = '';
-    
-    if (videos.length === 0) {
-      const emptyMsg = document.createElement('li');
-      emptyMsg.className = 'skipped-item empty-state';
-      emptyMsg.textContent = 'No videos skipped yet';
-      skippedList.appendChild(emptyMsg);
-      return;
-    }
-
-    videos.forEach(video => {
-      const li = document.createElement('li');
-      li.className = 'skipped-item';
-      
-      const title = document.createElement('div');
-      title.className = 'skipped-title';
-      title.title = video.title;
-      title.textContent = video.title;
-      
-      const age = document.createElement('div');
-      age.className = 'skipped-age';
-      age.textContent = `Uploaded: ${video.ageText}`;
-      
-      li.appendChild(title);
-      li.appendChild(age);
-      skippedList.appendChild(li);
     });
   }
   

@@ -18,7 +18,7 @@ Automatically mark old YouTube recommendations as "Not interested" based on uplo
 - **Automated "Not Interested" Marking**: Automatically clicks the "Not interested" menu for videos that exceed the time threshold.
 - **Visible Reason Placeholder**: Replaces processed feed cards with a "관심없음" placeholder and shows why the video was filtered, including upload age and the active threshold.
 - **Real-time Statistics**: View the number of detected and skipped videos directly in the extension popup.
-- **Liquid Glass Popup UI**: Manage settings from a redesigned popup with a glass-style dashboard, live status badge, and activity feed.
+- **YouTube Dark Theme Popup UI**: Manage settings from a token-based popup designed around YouTube dark surfaces, borders, text colors, and brand red accents.
 - **Performance Optimized**: Rapidly processes feed items with minimal delays (approx. 0.5s per video).
 - **Locale Support**: Fully supports both English and Korean YouTube interfaces.
 - **Debug Logging**: Toggle console logs on/off via the popup UI for troubleshooting.
@@ -58,7 +58,7 @@ Automatically mark old YouTube recommendations as "Not interested" based on uplo
 - **자동 "관심없음" 처리**: 시간 기준을 초과한 오래된 영상의 "관심없음" 메뉴를 자동으로 클릭합니다.
 - **처리 사유 표시**: 처리된 피드 카드를 삭제하지 않고 "관심없음" 영역으로 바꾼 뒤, 업로드 시점과 적용된 기준을 함께 표시합니다.
 - **실시간 통계**: 팝업창에서 감지된 영상 수와 스킵된 영상 수를 실시간으로 확인할 수 있습니다.
-- **리퀴드 글래스 팝업 UI**: 글래스 스타일 대시보드, 실시간 상태 배지, 최근 활동 목록으로 설정을 더 직관적으로 관리할 수 있습니다.
+- **유튜브 다크 테마 팝업 UI**: 유튜브 다크 테마의 배경, 표면, 테두리, 텍스트 색상, 브랜드 레드 포인트를 디자인 토큰으로 정의해 적용했습니다.
 - **성능 최적화**: 영상당 약 0.5초 내외의 빠른 속도로 피드를 처리합니다.
 - **다국어 지원**: 유튜브의 영어 및 한국어 인터페이스를 완벽하게 지원합니다.
 - **로그 제어**: 팝업 UI에서 개발자 도구 콘솔 로그 출력 여부를 간편하게 설정할 수 있습니다.

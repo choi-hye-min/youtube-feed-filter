@@ -16,8 +16,7 @@ let filterState = {
 // Stats tracking
 let stats = {
   detected: 0,
-  skipped: 0,
-  skippedVideos: [] // Array of {title, ageText}
+  skipped: 0
 };
 
 const THRESHOLD_LABELS = {
@@ -60,8 +59,6 @@ function queueNotInterested(videoElement, videoInfo, videoId) {
   if (videoId) processedVideoIds.add(videoId);
   
   stats.skipped++;
-  stats.skippedVideos.unshift(videoInfo);
-  if (stats.skippedVideos.length > 50) stats.skippedVideos.pop();
   
   // Update badge
   chrome.runtime.sendMessage({ action: 'updateBadge', count: stats.skipped });

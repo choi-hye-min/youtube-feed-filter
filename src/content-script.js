@@ -20,6 +20,19 @@ let stats = {
   skippedVideos: [] // Array of {title, ageText}
 };
 
+const THRESHOLD_LABELS = {
+  '1day': '1 Day',
+  '2days': '2 Days',
+  '3days': '3 Days',
+  '4days': '4 Days',
+  '5days': '5 Days',
+  '1week': '1 Week',
+  '2weeks': '2 Weeks',
+  '1month': '1 Month',
+  '3months': '3 Months',
+  '6months': '6 Months'
+};
+
 // Set to track processed video IDs (to handle YouTube's element recycling)
 const processedVideoIds = new Set();
 
@@ -53,7 +66,7 @@ function queueNotInterested(videoElement, videoInfo, videoId) {
   // Update badge
   chrome.runtime.sendMessage({ action: 'updateBadge', count: stats.skipped });
   
-  actionQueue.push({ element: videoElement, id: videoId });
+  actionQueue.push({ element: videoElement, videoInfo, id: videoId });
   if (!isProcessingQueue) {
     processQueue();
   }
@@ -71,7 +84,7 @@ async function processQueue() {
   while (actionQueue.length > 0) {
     const item = actionQueue.shift();
     try {
-      const success = await performMarkAsNotInterested(item.element);
+      const success = await performMarkAsNotInterested(item.element, item.videoInfo);
       if (success) {
         item.element.dataset.youtubeSkipProcessed = 'done';
       }
@@ -88,7 +101,37 @@ async function processQueue() {
 /**
  * Actual implementation of marking as not interested
  */
-function performMarkAsNotInterested(videoElement) {
+function renderNotInterestedPlaceholder(videoElement, videoInfo = null) {
+  if (videoElement.dataset.youtubeSkipPlaceholder === 'true') return;
+
+  const currentHeight = videoElement.offsetHeight;
+  const placeholder = document.createElement('div');
+  placeholder.className = 'youtube-skip-placeholder';
+  placeholder.setAttribute('role', 'status');
+  placeholder.setAttribute('aria-label', '관심없음 처리됨');
+
+  const title = document.createElement('div');
+  title.className = 'youtube-skip-placeholder-title';
+  title.textContent = '관심없음';
+
+  const reason = document.createElement('div');
+  reason.className = 'youtube-skip-placeholder-reason';
+  const thresholdLabel = THRESHOLD_LABELS[filterState.threshold] || filterState.threshold;
+  const ageText = videoInfo?.ageText || '기준 초과';
+  reason.textContent = `업로드: ${ageText} / 기준: ${thresholdLabel} 이상`;
+
+  placeholder.appendChild(title);
+  placeholder.appendChild(reason);
+
+  if (currentHeight > 0) {
+    placeholder.style.minHeight = `${Math.max(currentHeight, 96)}px`;
+  }
+
+  videoElement.dataset.youtubeSkipPlaceholder = 'true';
+  videoElement.replaceChildren(placeholder);
+}
+
+function performMarkAsNotInterested(videoElement, videoInfo) {
   return new Promise((resolve) => {
     try {
       const videoId = 'yt-skip-' + Math.random().toString(36).substr(2, 9);
@@ -98,17 +141,7 @@ function performMarkAsNotInterested(videoElement) {
         detail: { videoId: videoId }
       });
       window.dispatchEvent(event);
-      
-      // Visual feedback and permanent hiding
-      videoElement.style.setProperty('display', 'none', 'important');
-      videoElement.setAttribute('hidden', '');
-      
-      // Try to remove but also keep hidden in case YouTube re-inserts
-      setTimeout(() => {
-        if (videoElement.parentNode) {
-          videoElement.remove();
-        }
-      }, 400);
+      renderNotInterestedPlaceholder(videoElement, videoInfo);
 
       resolve(true);
     } catch (e) {
@@ -243,16 +276,13 @@ function applyFilter() {
     // 2. If node is recycled (video ID changed), reset processing state
     if (videoId && lastSeenId && videoId !== lastSeenId) {
       targetElement.dataset.youtubeSkipProcessed = '';
-      targetElement.style.display = '';
-      targetElement.removeAttribute('hidden');
     }
     
     if (videoId) targetElement.dataset.youtubeSkipVideoId = videoId;
 
     // 3. Skip if already done for this specific video ID
     if (videoId && processedVideoIds.has(videoId)) {
-      targetElement.style.setProperty('display', 'none', 'important');
-      targetElement.setAttribute('hidden', '');
+      renderNotInterestedPlaceholder(targetElement);
       return;
     }
 
@@ -334,14 +364,50 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 function init() {
   injectMainScript();
-  // Inject CSS to ensure hidden elements STAY hidden
   const style = document.createElement('style');
   style.textContent = `
-    [data-youtube-skip-processed="done"], 
-    [data-youtube-skip-processed="queued"],
-    ytd-rich-item-renderer[hidden],
-    ytd-video-renderer[hidden] { 
-      display: none !important; 
+    .youtube-skip-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      min-height: 96px;
+      border-radius: 12px;
+      background: rgba(15, 15, 15, 0.06);
+      color: var(--yt-spec-text-secondary, #606060);
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      box-sizing: border-box;
+      text-align: center;
+    }
+
+    .youtube-skip-placeholder-title {
+      color: var(--yt-spec-text-primary, #0f0f0f);
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .youtube-skip-placeholder-reason {
+      max-width: 92%;
+      color: var(--yt-spec-text-secondary, #606060);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    html[dark] .youtube-skip-placeholder,
+    [dark] .youtube-skip-placeholder {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--yt-spec-text-secondary, #aaa);
+    }
+
+    html[dark] .youtube-skip-placeholder-title,
+    [dark] .youtube-skip-placeholder-title {
+      color: var(--yt-spec-text-primary, #f1f1f1);
     }
   `;
   document.head.appendChild(style);

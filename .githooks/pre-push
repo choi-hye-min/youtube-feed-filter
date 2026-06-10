@@ -1,0 +1,90 @@
+#!/bin/sh
+
+set -eu
+
+README_PATH='README.md'
+ZERO_SHA='0000000000000000000000000000000000000000'
+CR="$(printf '\r')"
+
+readme_status="$(git status --porcelain -- "$README_PATH")"
+
+while read local_ref local_sha remote_ref remote_sha
+do
+  local_ref="${local_ref%"$CR"}"
+  local_sha="${local_sha%"$CR"}"
+  remote_ref="${remote_ref%"$CR"}"
+  remote_sha="${remote_sha%"$CR"}"
+
+  if [ "$local_sha" = "$ZERO_SHA" ]; then
+    continue
+  fi
+
+  if [ "$remote_sha" = "$ZERO_SHA" ]; then
+    default_remote="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [ -n "$default_remote" ]; then
+      base_sha="$(git merge-base "$default_remote" "$local_sha")"
+      changed_files="$(git diff --name-only "$base_sha" "$local_sha")"
+    else
+      changed_files="$(git diff-tree --no-commit-id --name-only -r "$local_sha")"
+    fi
+  else
+    changed_files="$(git diff --name-only "$remote_sha" "$local_sha")"
+  fi
+
+  has_trigger_change=false
+  has_readme_change=false
+  trigger_files=''
+
+  old_ifs="$IFS"
+  IFS='
+'
+  for changed_file in $changed_files
+  do
+    case "$changed_file" in
+      src/*|MESSAGE_PROTOCOL.md|specs/*)
+        has_trigger_change=true
+        trigger_files="${trigger_files}${changed_file}
+"
+        ;;
+    esac
+
+    if [ "$changed_file" = "$README_PATH" ]; then
+      has_readme_change=true
+    fi
+  done
+  IFS="$old_ifs"
+
+  if [ "$has_trigger_change" = true ]; then
+    if [ "$has_readme_change" != true ]; then
+      printf '%s\n' "[youtube_skip] README.md must be updated when source, protocol, or spec files change before pushing."
+      printf '%s\n' "Changed files that require README review:"
+      old_ifs="$IFS"
+      IFS='
+'
+      for trigger_file in $trigger_files
+      do
+        [ -n "$trigger_file" ] && printf '  - %s\n' "$trigger_file"
+      done
+      IFS="$old_ifs"
+      printf '%s\n' ""
+      printf '%s\n' "Update README.md, commit it with your changes, then push again."
+      exit 1
+    fi
+  fi
+done
+
+if [ -n "$readme_status" ]; then
+  printf '%s\n' "[youtube_skip] README.md has uncommitted changes."
+  printf '%s\n' "Commit or stash README.md before pushing:"
+  old_ifs="$IFS"
+  IFS='
+'
+  for status_line in $readme_status
+  do
+    printf '  %s\n' "$status_line"
+  done
+  IFS="$old_ifs"
+  exit 1
+fi
+
+exit 0

@@ -49,6 +49,15 @@ Automatically mark old YouTube recommendations as "Not interested" based on uplo
 - 3 Months
 - 6 Months
 
+### 🔒 README Freshness Check
+Enable the tracked Git hook once per local clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+After that, `git push` is blocked when source, protocol, or spec files change without a committed `README.md` update.
+
 ---
 
 ## 한국어
@@ -88,6 +97,15 @@ Automatically mark old YouTube recommendations as "Not interested" based on uplo
 - 1개월
 - 3개월
 - 6개월
+
+### 🔒 README 최신화 검사
+로컬 클론마다 한 번만 추적 가능한 Git 훅을 활성화합니다:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+이후 `git push` 시 소스, 프로토콜, 스펙 파일이 바뀌었는데 커밋된 `README.md` 변경이 없으면 push가 중단됩니다.
 
 ---
 

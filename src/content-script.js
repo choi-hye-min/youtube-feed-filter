@@ -32,8 +32,8 @@ const THRESHOLD_LABELS = {
   '6months': '6 Months'
 };
 
-// Set to track processed video IDs (to handle YouTube's element recycling)
-const processedVideoIds = new Set();
+// Map to track processed video data (ID -> info)
+const processedVideos = new Map();
 
 // Queue for sequential "Not interested" actions
 let actionQueue = [];
@@ -56,7 +56,7 @@ function queueNotInterested(videoElement, videoInfo, videoId) {
   if (status === 'queued' || status === 'done') return;
   
   videoElement.dataset.youtubeSkipProcessed = 'queued';
-  if (videoId) processedVideoIds.add(videoId);
+  if (videoId) processedVideos.set(videoId, videoInfo);
   
   stats.skipped++;
   
@@ -111,6 +111,11 @@ function renderNotInterestedPlaceholder(videoElement, videoInfo = null) {
   title.className = 'youtube-skip-placeholder-title';
   title.textContent = '관심없음';
 
+  // Video Title element
+  const videoTitle = document.createElement('div');
+  videoTitle.className = 'youtube-skip-placeholder-video-title';
+  videoTitle.textContent = videoInfo?.title || '알 수 없는 제목';
+
   const reason = document.createElement('div');
   reason.className = 'youtube-skip-placeholder-reason';
   const thresholdLabel = THRESHOLD_LABELS[filterState.threshold] || filterState.threshold;
@@ -118,6 +123,7 @@ function renderNotInterestedPlaceholder(videoElement, videoInfo = null) {
   reason.textContent = `업로드: ${ageText} / 기준: ${thresholdLabel} 이상`;
 
   placeholder.appendChild(title);
+  placeholder.appendChild(videoTitle);
   placeholder.appendChild(reason);
 
   if (currentHeight > 0) {
@@ -130,19 +136,38 @@ function renderNotInterestedPlaceholder(videoElement, videoInfo = null) {
 
 function performMarkAsNotInterested(videoElement, videoInfo) {
   return new Promise((resolve) => {
-    try {
-      const videoId = 'yt-skip-' + Math.random().toString(36).substr(2, 9);
-      videoElement.dataset.youtubeSkipId = videoId;
+    const videoId = 'yt-skip-' + Math.random().toString(36).substr(2, 9);
+    videoElement.dataset.youtubeSkipId = videoId;
 
+    const timeout = setTimeout(() => {
+      window.removeEventListener('youtube-skip-response', onResponse);
+      debugLog('Response timeout for:', videoId);
+      renderNotInterestedPlaceholder(videoElement, videoInfo);
+      resolve(false);
+    }, 5000);
+
+    function onResponse(e) {
+      if (e.detail.videoId === videoId) {
+        clearTimeout(timeout);
+        window.removeEventListener('youtube-skip-response', onResponse);
+        debugLog(`Received response for ${videoId}: success=${e.detail.success}, method=${e.detail.method}`);
+        renderNotInterestedPlaceholder(videoElement, videoInfo);
+        resolve(e.detail.success);
+      }
+    }
+
+    window.addEventListener('youtube-skip-response', onResponse);
+
+    try {
       const event = new CustomEvent('youtube-skip-action', {
         detail: { videoId: videoId }
       });
       window.dispatchEvent(event);
-      renderNotInterestedPlaceholder(videoElement, videoInfo);
-
-      resolve(true);
     } catch (e) {
       console.error('[youtube_skip] Error bridging to internal command:', e);
+      clearTimeout(timeout);
+      window.removeEventListener('youtube-skip-response', onResponse);
+      renderNotInterestedPlaceholder(videoElement, videoInfo);
       resolve(false);
     }
   });
@@ -235,12 +260,55 @@ function parseTimeToMs(timeText) {
 
 function extractVideoTitle(videoElement) {
   try {
-    const titleElem = videoElement.querySelector('#video-title, #video-title-link, .yt-lockup-metadata-view-model-wiz__title');
-    if (titleElem) return titleElem.innerText || titleElem.textContent;
-    const vmTitle = videoElement.querySelector('.ytAttributedStringHost');
-    if (vmTitle) return vmTitle.innerText || vmTitle.textContent;
-    return 'Unknown Title';
-  } catch (e) { return 'Unknown Title'; }
+    // 1. Try standard YouTube title IDs/Classes
+    const titleSelectors = [
+      '#video-title', 
+      '#video-title-link', 
+      '.yt-lockup-metadata-view-model-wiz__title',
+      '#content-text',
+      '.style-scope ytd-rich-grid-media #video-title'
+    ];
+    
+    for (const sel of titleSelectors) {
+      const el = videoElement.querySelector(sel);
+      if (el && (el.innerText || el.textContent).trim()) {
+        const found = (el.innerText || el.textContent).trim();
+        debugLog('Title found via selector:', sel, found);
+        return found;
+      }
+    }
+
+    // 2. Try view-model specific strings (modern UI)
+    const vmTitle = videoElement.querySelector('.ytAttributedStringHost, .yt-core-attributed-string');
+    if (vmTitle && (vmTitle.innerText || vmTitle.textContent).trim()) {
+      const found = (vmTitle.innerText || vmTitle.textContent).trim();
+      debugLog('Title found via VM selector:', found);
+      return found;
+    }
+
+    // 3. Try ARIA label
+    const ariaLabel = videoElement.getAttribute('aria-label');
+    if (ariaLabel) {
+      const byIndex = ariaLabel.indexOf(' by ');
+      const found = byIndex > 0 ? ariaLabel.substring(0, byIndex).trim() : ariaLabel.trim();
+      debugLog('Title found via ARIA:', found);
+      return found;
+    }
+
+    // 4. Try finding any anchor with a title attribute
+    const titledAnchor = videoElement.querySelector('a[title]');
+    if (titledAnchor && titledAnchor.getAttribute('title')) {
+      const found = titledAnchor.getAttribute('title').trim();
+      debugLog('Title found via Anchor title:', found);
+      return found;
+    }
+
+    console.warn('[youtube_skip] Failed to extract title for element:', videoElement);
+    return '알 수 없는 제목';
+  } catch (e) { 
+    console.error('[youtube_skip] Error extracting title:', e);
+    return '알 수 없는 제목'; 
+  }
 }
 
 /**
@@ -248,6 +316,12 @@ function extractVideoTitle(videoElement) {
  */
 function applyFilter() {
   if (!filterState.enabled) return;
+
+  // Only run on the home page
+  const path = window.location.pathname;
+  if (path !== '/' && path !== '') {
+    return;
+  }
   
   const selectors = [
     'ytd-rich-item-renderer', 
@@ -278,8 +352,8 @@ function applyFilter() {
     if (videoId) targetElement.dataset.youtubeSkipVideoId = videoId;
 
     // 3. Skip if already done for this specific video ID
-    if (videoId && processedVideoIds.has(videoId)) {
-      renderNotInterestedPlaceholder(targetElement);
+    if (videoId && processedVideos.has(videoId)) {
+      renderNotInterestedPlaceholder(targetElement, processedVideos.get(videoId));
       return;
     }
 
@@ -387,6 +461,19 @@ function init() {
       font-weight: 600;
     }
 
+    .youtube-skip-placeholder-video-title {
+      max-width: 90%;
+      color: var(--yt-spec-text-primary, #0f0f0f);
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin: 2px 0;
+    }
+
     .youtube-skip-placeholder-reason {
       max-width: 92%;
       color: var(--yt-spec-text-secondary, #606060);
@@ -403,7 +490,9 @@ function init() {
     }
 
     html[dark] .youtube-skip-placeholder-title,
-    [dark] .youtube-skip-placeholder-title {
+    [dark] .youtube-skip-placeholder-title,
+    html[dark] .youtube-skip-placeholder-video-title,
+    [dark] .youtube-skip-placeholder-video-title {
       color: var(--yt-spec-text-primary, #f1f1f1);
     }
   `;

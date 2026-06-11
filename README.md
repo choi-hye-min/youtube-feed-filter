@@ -6,12 +6,12 @@ Automatically mark old YouTube recommendations as "Not interested" based on uplo
 ### 🛠 최신 개선 사항 (Recent Improvements)
 | 개선 기능 | 상세 내용 |
 | :--- | :--- |
-| **최신 유튜브 UI 대응** | `yt-lockup-view-model` 등 최신 데이터 구조에서 "관심없음" 명령을 추적하도록 개선 |
-| **네트워크 안정성 확보** | API 호출 및 클릭 시뮬레이션 완료 후 UI를 교체하여 `v1/feedback` 요청 누락 방지 |
-| **메인 페이지 전용 동작** | 의도치 않은 검색 결과 필터링 방지를 위해 유튜브 홈 페이지(`/`)에서만 동작하도록 제한 |
-| **상세 정보 표시** | 플레이스홀더에 필터링된 영상의 **제목**을 추가하여 어떤 영상이 처리되었는지 명시 |
-| **데이터 보존 및 재사용** | 스크롤 시 요소가 재사용되어도 영상 제목이 유실되지 않도록 데이터 관리 최적화 |
-| **다크 모드 최적화** | 유튜브 다크 테마 환경에서도 제목과 텍스트가 잘 보이도록 색상 및 대비 조정 |
+| <subSmall>**최신 유튜브 UI 대응**</subSmall> | <subSmall>`yt-lockup-view-model` 등 최신 데이터 구조에서 "관심없음" 명령을 추적하도록 개선</subSmall> |
+| <subSmall>**네트워크 안정성 확보**</subSmall> | <subSmall>API 호출 및 클릭 시뮬레이션 완료 후 UI를 교체하여 `v1/feedback` 요청 누락 방지</subSmall> |
+| <subSmall>**메인 페이지 전용 동작**</subSmall> | <subSmall>의도치 않은 검색 결과 필터링 방지를 위해 유튜브 홈 페이지(`/`)에서만 동작하도록 제한</subSmall> |
+| <subSmall>**상세 정보 표시**</subSmall> | <subSmall>플레이스홀더에 필터링된 영상의 **제목**을 추가하여 어떤 영상이 처리되었는지 명시</subSmall> |
+| <subSmall>**데이터 보존 및 재사용**</subSmall> | <subSmall>스크롤 시 요소가 재사용되어도 영상 제목이 유실되지 않도록 데이터 관리 최적화</subSmall> |
+| <subSmall>**다크 모드 최적화**</subSmall> | <subSmall>유튜브 다크 테마 환경에서도 제목과 텍스트가 잘 보이도록 색상 및 대비 조정</subSmall> |
 
 ---
 

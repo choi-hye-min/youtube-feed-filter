@@ -69,8 +69,12 @@
   /**
    * Helper: Click the actual "Not interested" button in the UI
    */
-  async function clickNotInterestedUI(videoElement) {
-    const selectors = [
+  async function clickNotInterestedUI(videoElement, pageType) {
+    const isVisible = (element) => Boolean(
+      element && element.isConnected && element.getClientRects().length > 0
+    );
+
+    const homeSelectors = [
         'button[aria-label*="메뉴"]', 
         'button[aria-label*="menu"]', 
         'button[aria-label*="Action"]',
@@ -82,12 +86,20 @@
         'yt-button-shape button',
         'ytd-menu-renderer button'
     ];
+    const watchSelectors = [
+        '.ytLockupMetadataViewModelMenuButton button[aria-label="추가 작업"]',
+        '.ytLockupMetadataViewModelMenuButton button',
+        'button[aria-label="Action menu"]',
+        'button[aria-label*="추가 작업"]',
+        'ytd-menu-renderer button'
+    ];
+    const selectors = pageType === 'watch' ? watchSelectors : homeSelectors;
     
     let menuButton = null;
     for (const sel of selectors) {
         const btns = videoElement.querySelectorAll(sel);
         for (const btn of btns) {
-            if (btn && btn.offsetParent !== null) {
+            if (isVisible(btn)) {
                 menuButton = btn;
                 break;
             }
@@ -108,9 +120,45 @@
       }
     }
 
-    if (!menuButton) return false;
+    if (!menuButton || !videoElement.isConnected) return false;
 
-    menuButton.scrollIntoView({ block: 'center', inline: 'nearest' });
+    // YouTube keeps closed popup items in the DOM. Dismiss any previous popup
+    // so the search below cannot select a stale hidden "Not interested" item.
+    const openPopup = Array.from(document.querySelectorAll(
+      'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
+    )).find(isVisible);
+    if (openPopup) {
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true
+      }));
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    const suppressMenuFocusScrolling = () => {
+      const originalFocus = HTMLElement.prototype.focus;
+      const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+      HTMLElement.prototype.focus = function(options) {
+        return originalFocus.call(this, { ...(options || {}), preventScroll: true });
+      };
+      Element.prototype.scrollIntoView = function(options) {
+        const isTargetCard = this === videoElement || videoElement.contains(this);
+        const isMenuPopup = this.closest?.(
+          'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
+        );
+        if (isTargetCard || isMenuPopup) return;
+        return originalScrollIntoView.call(this, options);
+      };
+
+      return () => {
+        HTMLElement.prototype.focus = originalFocus;
+        Element.prototype.scrollIntoView = originalScrollIntoView;
+      };
+    };
+
+    const stopSuppressingScroll = suppressMenuFocusScrolling();
     menuButton.click();
     
     return new Promise((resolve) => {
@@ -118,21 +166,24 @@
       const interval = setInterval(() => {
         attempts++;
         
-        const items = document.querySelectorAll('yt-list-item-view-model, ytd-menu-service-item-renderer, tp-yt-paper-item, .ytd-menu-popup-renderer, yt-button-view-model, ytd-menu-navigation-item-renderer');
+        const items = document.querySelectorAll('yt-list-item-view-model, ytd-menu-service-item-renderer, tp-yt-paper-item, yt-button-view-model, ytd-menu-navigation-item-renderer');
         
         let foundAny = false;
         for (const item of items) {
+          if (!isVisible(item)) continue;
           foundAny = true;
           const text = item.innerText || item.textContent || "";
           if (text.replace(/\s/g, '').match(/관심없음|Notinterested|興味なし|不感兴趣/i)) {
             console.log('[youtube_skip] Found UI button, clicking...');
-            item.click();
+            const clickTarget = item.querySelector('button, [role="button"]') || item;
+            clickTarget.click();
             clearInterval(interval);
+            // Let YouTube complete the feedback request and recommendation-list
+            // reconciliation before the next queued card is processed.
             setTimeout(() => {
-                document.body.click();
-                window.dispatchEvent(new Event('click'));
-            }, 200);
-            resolve(true);
+              stopSuppressingScroll();
+              resolve(true);
+            }, 700);
             return;
           }
         }
@@ -143,7 +194,12 @@
               const availableItems = Array.from(items).map(i => i.innerText || i.textContent || "unknown").filter(t => t.trim() !== "");
               console.log('[youtube_skip] UI Items found but none matched "Not interested":', availableItems);
           }
-          document.body.click();
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape',
+            code: 'Escape',
+            bubbles: true
+          }));
+          stopSuppressingScroll();
           resolve(false);
         }
       }, 100);
@@ -151,7 +207,7 @@
   }
 
   window.addEventListener('youtube-skip-action', async function(e) {
-    const { videoId } = e.detail;
+    const { videoId, pageType = 'home' } = e.detail;
     const videoElement = document.querySelector(`[data-youtube-skip-id="${videoId}"]`);
     
     function sendResponse(success, method) {
@@ -170,7 +226,10 @@
       let data = videoElement.data || (videoElement.__data && videoElement.__data.data) || videoElement.__data;
       
       if (!data) {
-          const vm = videoElement.querySelector('ytd-rich-grid-media, ytd-video-renderer, yt-lockup-view-model, ytd-rich-item-renderer');
+          const pageSelectors = pageType === 'watch'
+            ? 'yt-lockup-view-model, ytd-compact-video-renderer, yt-lockup-metadata-view-model'
+            : 'ytd-rich-grid-media, ytd-video-renderer, yt-lockup-view-model, ytd-rich-item-renderer';
+          const vm = videoElement.matches(pageSelectors) ? videoElement : videoElement.querySelector(pageSelectors);
           if (vm) data = vm.data || vm.__data;
       }
       
@@ -191,7 +250,7 @@
       }
 
       console.log('[youtube_skip] API discovery failed, attempting UI simulation for:', videoId);
-      const success = await clickNotInterestedUI(videoElement);
+      const success = await clickNotInterestedUI(videoElement, pageType);
       if (success) {
         console.log('[youtube_skip] v1/feedback triggered via UI Click for:', videoId);
         sendResponse(true, 'ui');

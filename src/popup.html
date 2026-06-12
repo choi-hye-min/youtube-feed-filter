@@ -20,6 +20,17 @@
             <div id="status" class="status-pill"></div>
         </header>
 
+        <section id="stats-container" class="glass-panel stats-panel compact-stats">
+            <div class="stat-card">
+                <span class="stat-label">Detected</span>
+                <span id="detected-count" class="stat-value">0</span>
+            </div>
+            <div class="stat-card accent-card">
+                <span class="stat-label">Skipped</span>
+                <span id="skipped-count" class="stat-value">0</span>
+            </div>
+        </section>
+
         <section class="glass-panel controls-panel">
             <div id="filter-control" class="control-block">
                 <label for="threshold-select">Filter Older Than</label>
@@ -50,6 +61,30 @@
                     </label>
                 </div>
 
+                <div class="page-toggle-group" aria-label="Page filtering controls">
+                    <div id="home-filter-toggle" class="toggle-row page-toggle-row">
+                        <div class="toggle-copy">
+                            <span class="toggle-title">Main Page</span>
+                            <span class="toggle-subtitle">Filter recommendations on the YouTube home feed.</span>
+                        </div>
+                        <label class="switch" for="enable-home-filter" aria-label="Enable Main Page Filtering">
+                            <input type="checkbox" id="enable-home-filter" checked>
+                            <span class="switch-ui"></span>
+                        </label>
+                    </div>
+
+                    <div id="watch-filter-toggle" class="toggle-row page-toggle-row">
+                        <div class="toggle-copy">
+                            <span class="toggle-title">Watch Page</span>
+                            <span class="toggle-subtitle">Filter related videos beside and below the player.</span>
+                        </div>
+                        <label class="switch" for="enable-watch-filter" aria-label="Enable Watch Page Filtering">
+                            <input type="checkbox" id="enable-watch-filter" checked>
+                            <span class="switch-ui"></span>
+                        </label>
+                    </div>
+                </div>
+
                 <div id="logging-toggle" class="toggle-row">
                     <div class="toggle-copy">
                         <span class="toggle-title">Debug Logging</span>
@@ -60,17 +95,6 @@
                         <span class="switch-ui"></span>
                     </label>
                 </div>
-            </div>
-        </section>
-
-        <section id="stats-container" class="glass-panel stats-panel">
-            <div class="stat-card">
-                <span class="stat-label">Detected</span>
-                <span id="detected-count" class="stat-value">0</span>
-            </div>
-            <div class="stat-card accent-card">
-                <span class="stat-label">Skipped</span>
-                <span id="skipped-count" class="stat-value">0</span>
             </div>
         </section>
 

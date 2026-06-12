@@ -32,11 +32,15 @@
 }
 
 html {
+    width: 390px;
+    max-width: 390px;
+    overflow-x: hidden;
     background: var(--yt-color-bg);
 }
 
 body {
-    width: 390px;
+    width: 100%;
+    max-width: 100%;
     margin: 0;
     overflow: hidden;
     background: var(--yt-color-bg);
@@ -45,10 +49,12 @@ body {
 }
 
 #popup-container {
-    padding: var(--yt-space-4);
+    width: 100%;
+    max-width: 100%;
+    padding: var(--yt-space-3);
     display: flex;
     flex-direction: column;
-    gap: var(--yt-space-3);
+    gap: var(--yt-space-2);
     background: var(--yt-color-bg);
 }
 
@@ -64,9 +70,9 @@ body {
 }
 
 .hero-panel {
-    padding: var(--yt-space-4);
+    padding: var(--yt-space-3);
     display: grid;
-    gap: var(--yt-space-3);
+    gap: var(--yt-space-2);
     border-top: 3px solid var(--yt-color-brand);
 }
 
@@ -75,7 +81,7 @@ body {
 }
 
 .eyebrow {
-    margin: 0 0 var(--yt-space-2);
+    margin: 0 0 var(--yt-space-1);
     color: var(--yt-color-text-secondary);
     font-size: 11px;
     font-weight: 600;
@@ -86,17 +92,14 @@ body {
 h1 {
     margin: 0;
     color: var(--yt-color-text-primary);
-    font-size: 24px;
+    font-size: 21px;
     font-weight: 800;
     line-height: 1.05;
     letter-spacing: 0;
 }
 
 .hero-description {
-    margin: var(--yt-space-2) 0 0;
-    color: var(--yt-color-text-secondary);
-    font-size: 12px;
-    line-height: 1.45;
+    display: none;
 }
 
 .status-pill {
@@ -104,7 +107,7 @@ h1 {
     width: fit-content;
     align-items: center;
     gap: var(--yt-space-2);
-    padding: 7px 10px;
+    padding: 5px 9px;
     border-radius: var(--yt-radius-pill);
     background: rgba(43, 166, 64, 0.14);
     border: 1px solid rgba(43, 166, 64, 0.5);
@@ -130,13 +133,13 @@ h1 {
 }
 
 .controls-panel {
-    padding: var(--yt-space-4);
+    padding: var(--yt-space-3);
 }
 
 .controls-panel {
     display: flex;
     flex-direction: column;
-    gap: var(--yt-space-3);
+    gap: var(--yt-space-2);
 }
 
 .control-block {
@@ -155,7 +158,7 @@ label {
 
 select {
     width: 100%;
-    min-height: 40px;
+    min-height: 34px;
     padding: 0 40px 0 12px;
     border: 1px solid var(--yt-color-border);
     border-radius: var(--yt-radius-control);
@@ -185,7 +188,24 @@ select option {
 #toggles-container {
     display: flex;
     flex-direction: column;
-    gap: var(--yt-space-2);
+    gap: 6px;
+}
+
+.page-toggle-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-left: var(--yt-space-2);
+    border-left: 2px solid var(--yt-color-border);
+}
+
+.page-toggle-row {
+    background: var(--yt-color-control);
+}
+
+.page-toggle-group.is-disabled {
+    opacity: 0.45;
+    pointer-events: none;
 }
 
 .toggle-row {
@@ -193,7 +213,7 @@ select option {
     align-items: center;
     justify-content: space-between;
     gap: var(--yt-space-3);
-    padding: var(--yt-space-3);
+    padding: 8px 10px;
     border-radius: var(--yt-radius-control);
     background: var(--yt-color-surface-raised);
     border: 1px solid var(--yt-color-border);
@@ -208,19 +228,19 @@ select option {
 .toggle-copy {
     display: flex;
     flex-direction: column;
-    gap: var(--yt-space-1);
+    gap: 2px;
     min-width: 0;
 }
 
 .toggle-title {
     color: var(--yt-color-text-primary);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
 }
 
 .toggle-subtitle {
     color: var(--yt-color-text-secondary);
-    font-size: 11px;
+    font-size: 10px;
     line-height: 1.35;
 }
 
@@ -277,17 +297,22 @@ select option {
 #stats-container {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--yt-space-3);
+    gap: var(--yt-space-2);
     background: transparent;
     border: 0;
     box-shadow: none;
 }
 
 .stat-card {
-    padding: var(--yt-space-4);
+    min-height: 44px;
+    padding: 7px 10px;
     border-radius: var(--yt-radius-panel);
     background: var(--yt-color-surface);
     border: 1px solid var(--yt-color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--yt-space-2);
 }
 
 .accent-card {
@@ -301,7 +326,7 @@ select option {
 }
 
 .stat-label {
-    margin-bottom: var(--yt-space-2);
+    margin-bottom: 0;
     color: var(--yt-color-text-secondary);
     font-size: 11px;
     font-weight: 700;
@@ -311,7 +336,7 @@ select option {
 
 .stat-value {
     color: var(--yt-color-text-primary);
-    font-size: 28px;
+    font-size: 19px;
     font-weight: 800;
     line-height: 1;
     letter-spacing: 0;

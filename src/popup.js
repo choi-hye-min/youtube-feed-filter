@@ -8,6 +8,9 @@
 document.addEventListener('DOMContentLoaded', () => {
   const thresholdSelect = document.getElementById('threshold-select');
   const enableFilter = document.getElementById('enable-filter');
+  const enableHomeFilter = document.getElementById('enable-home-filter');
+  const enableWatchFilter = document.getElementById('enable-watch-filter');
+  const pageToggleGroup = document.querySelector('.page-toggle-group');
   const enableLogging = document.getElementById('enable-logging');
   const statusDiv = document.getElementById('status');
   const detectedCountSpan = document.getElementById('detected-count');
@@ -26,17 +29,28 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   
   // Load saved state from storage
-  chrome.storage.local.get(['filter_threshold', 'filter_enabled', 'logging_enabled'], (result) => {
+  chrome.storage.local.get([
+    'filter_threshold',
+    'filter_enabled',
+    'home_filter_enabled',
+    'watch_filter_enabled',
+    'logging_enabled'
+  ], (result) => {
     const savedThreshold = result.filter_threshold || '1month';
     const savedEnabled = result.filter_enabled !== false;
+    const savedHomeEnabled = result.home_filter_enabled !== false;
+    const savedWatchEnabled = result.watch_filter_enabled !== false;
     const savedLogging = result.logging_enabled === true;
     
     // Restore UI state
     thresholdSelect.value = savedThreshold;
     enableFilter.checked = savedEnabled;
+    enableHomeFilter.checked = savedHomeEnabled;
+    enableWatchFilter.checked = savedWatchEnabled;
     enableLogging.checked = savedLogging;
     
-    updateStatus(savedThreshold, savedEnabled);
+    updateStatus(savedThreshold, savedEnabled, savedHomeEnabled, savedWatchEnabled);
+    updatePageToggleAvailability(savedEnabled);
     updateStats();
   });
 
@@ -71,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
           threshold: selectedThreshold
         }, (response) => {
           if (response && response.success) {
-            updateStatus(selectedThreshold, enableFilter.checked);
+            updateStatus(selectedThreshold, enableFilter.checked, enableHomeFilter.checked, enableWatchFilter.checked);
           }
         });
       });
@@ -88,11 +102,39 @@ document.addEventListener('DOMContentLoaded', () => {
       }, (response) => {
         if (response && response.success) {
           chrome.storage.local.get(['filter_threshold'], (result) => {
-            updateStatus(result.filter_threshold || '1month', enabled);
+            updateStatus(result.filter_threshold || '1month', enabled, enableHomeFilter.checked, enableWatchFilter.checked);
+            updatePageToggleAvailability(enabled);
           });
         }
       });
     });
+  });
+
+  function handlePageToggle(page, enabled) {
+    chrome.runtime.sendMessage({
+      action: 'setPageFilterEnabled',
+      page,
+      enabled
+    }, (response) => {
+      if (response?.success) {
+        chrome.storage.local.get(['filter_threshold'], (result) => {
+          updateStatus(
+            result.filter_threshold || '1month',
+            enableFilter.checked,
+            enableHomeFilter.checked,
+            enableWatchFilter.checked
+          );
+        });
+      }
+    });
+  }
+
+  enableHomeFilter.addEventListener('change', (event) => {
+    handlePageToggle('home', event.target.checked);
+  });
+
+  enableWatchFilter.addEventListener('change', (event) => {
+    handlePageToggle('watch', event.target.checked);
   });
 
   // Logging toggle handler
@@ -106,14 +148,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  function updateStatus(threshold, enabled) {
-    statusDiv.classList.toggle('is-inactive', !enabled);
+  function updatePageToggleAvailability(enabled) {
+    pageToggleGroup.classList.toggle('is-disabled', !enabled);
+    enableHomeFilter.disabled = !enabled;
+    enableWatchFilter.disabled = !enabled;
+  }
 
-    if (!enabled) {
+  function updateStatus(threshold, enabled, homeEnabled, watchEnabled) {
+    const activePages = [homeEnabled && 'Main', watchEnabled && 'Watch'].filter(Boolean);
+    const isActive = enabled && activePages.length > 0;
+    statusDiv.classList.toggle('is-inactive', !isActive);
+
+    if (!isActive) {
       statusDiv.textContent = 'Filter Inactive';
     } else {
       const thresholdLabel = thresholdLabels[threshold] || threshold;
-      statusDiv.textContent = `Filtering ${thresholdLabel}+ content`;
+      statusDiv.textContent = `${activePages.join(' + ')} · ${thresholdLabel}+`;
     }
   }
 });

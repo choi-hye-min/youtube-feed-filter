@@ -9,8 +9,20 @@
 const STORAGE_KEYS = {
   THRESHOLD: 'filter_threshold',
   ENABLED: 'filter_enabled',
+  HOME_ENABLED: 'home_filter_enabled',
+  WATCH_ENABLED: 'watch_filter_enabled',
   LOGGING: 'logging_enabled'
 };
+
+const STATE_STORAGE_KEYS = Object.values(STORAGE_KEYS);
+
+function notifyYouTubeTabs() {
+  chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
+    tabs.forEach(tab => {
+      chrome.tabs.sendMessage(tab.id, { action: 'applyFilter' }).catch(() => {});
+    });
+  });
+}
 
 // Threshold value definitions (in milliseconds)
 const THRESHOLD_PRESETS = {
@@ -31,12 +43,18 @@ const THRESHOLD_PRESETS = {
  */
 chrome.runtime.onInstalled.addListener(() => {
   // Set default state
-  chrome.storage.local.get([STORAGE_KEYS.THRESHOLD, STORAGE_KEYS.ENABLED, STORAGE_KEYS.LOGGING], (result) => {
+  chrome.storage.local.get(STATE_STORAGE_KEYS, (result) => {
     if (!result[STORAGE_KEYS.THRESHOLD]) {
       chrome.storage.local.set({ [STORAGE_KEYS.THRESHOLD]: '1month' });
     }
     if (result[STORAGE_KEYS.ENABLED] === undefined) {
       chrome.storage.local.set({ [STORAGE_KEYS.ENABLED]: true });
+    }
+    if (result[STORAGE_KEYS.HOME_ENABLED] === undefined) {
+      chrome.storage.local.set({ [STORAGE_KEYS.HOME_ENABLED]: true });
+    }
+    if (result[STORAGE_KEYS.WATCH_ENABLED] === undefined) {
+      chrome.storage.local.set({ [STORAGE_KEYS.WATCH_ENABLED]: true });
     }
     if (result[STORAGE_KEYS.LOGGING] === undefined) {
       chrome.storage.local.set({ [STORAGE_KEYS.LOGGING]: false });
@@ -53,11 +71,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[youtube_skip] Background: Setting threshold to', request.threshold);
     chrome.storage.local.set({ [STORAGE_KEYS.THRESHOLD]: request.threshold }, () => {
       // Notify content scripts to re-evaluate
-      chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
-        tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, { action: 'applyFilter' }).catch(() => {});
-        });
-      });
+      notifyYouTubeTabs();
       sendResponse({ success: true });
     });
     return true; // Asynchronous
@@ -65,14 +79,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[youtube_skip] Background: Setting filter enabled to', request.enabled);
     chrome.storage.local.set({ [STORAGE_KEYS.ENABLED]: request.enabled }, () => {
       // Notify content scripts
-      chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
-        tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, { action: 'applyFilter' }).catch(() => {});
-        });
-      });
+      notifyYouTubeTabs();
       sendResponse({ success: true });
     });
     return true; // Asynchronous
+  } else if (request.action === 'setPageFilterEnabled') {
+    const storageKey = request.page === 'watch'
+      ? STORAGE_KEYS.WATCH_ENABLED
+      : STORAGE_KEYS.HOME_ENABLED;
+    chrome.storage.local.set({ [storageKey]: request.enabled }, () => {
+      notifyYouTubeTabs();
+      sendResponse({ success: true });
+    });
+    return true;
   } else if (request.action === 'setLoggingEnabled') {
     console.log('[youtube_skip] Background: Setting logging enabled to', request.enabled);
     chrome.storage.local.set({ [STORAGE_KEYS.LOGGING]: request.enabled }, () => {
@@ -86,11 +105,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // Asynchronous
   } else if (request.action === 'getState') {
-    chrome.storage.local.get([STORAGE_KEYS.THRESHOLD, STORAGE_KEYS.ENABLED, STORAGE_KEYS.LOGGING], (result) => {
+    chrome.storage.local.get(STATE_STORAGE_KEYS, (result) => {
       const state = {
         threshold: result[STORAGE_KEYS.THRESHOLD] || '1month',
         enabled: result[STORAGE_KEYS.ENABLED] !== false,
-        logging: result[STORAGE_KEYS.LOGGING] === true
+        homeEnabled: result[STORAGE_KEYS.HOME_ENABLED] !== false,
+        watchEnabled: result[STORAGE_KEYS.WATCH_ENABLED] !== false,
+        loggingEnabled: result[STORAGE_KEYS.LOGGING] === true
       };
       sendResponse(state);
     });

@@ -137,15 +137,17 @@
       return new Promise((resolve) => {
         const requestId = `yt-skip-${adapter.key}-${Math.random().toString(36).slice(2, 11)}`;
         element.dataset.youtubeSkipId = requestId;
-        const timeout = setTimeout(() => finish(false), 8000);
+        const timeout = setTimeout(() => finish(false, 'timeout'), 8000);
 
-        function finish(success) {
+        function finish(success, method) {
           clearTimeout(timeout);
           window.removeEventListener('youtube-skip-response', onResponse);
-          resolve(success);
+          resolve({ success, method });
         }
         function onResponse(event) {
-          if (event.detail.videoId === requestId) finish(event.detail.success);
+          if (event.detail.videoId === requestId) {
+            finish(event.detail.success, event.detail.method);
+          }
         }
 
         window.addEventListener('youtube-skip-response', onResponse);
@@ -160,6 +162,7 @@
       processing = true;
       while (queue.length && !stopped) {
         const item = queue.shift();
+        let actionMethod = null;
         try {
           let success = false;
           let element = item.element;
@@ -172,7 +175,9 @@
             }
 
             element.setAttribute(attribute('processed'), 'queued');
-            success = await performAction(element);
+            const result = await performAction(element);
+            success = result.success;
+            actionMethod = result.method;
             if (!success) await new Promise((resolve) => setTimeout(resolve, 500));
           }
 
@@ -189,7 +194,10 @@
         } catch (error) {
           console.error(`[youtube_skip:${adapter.key}] Queue error`, error);
         }
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        const actionDelay = adapter.getActionDelay?.(actionMethod) ?? 700;
+        if (actionDelay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, actionDelay));
+        }
       }
       processing = false;
     }

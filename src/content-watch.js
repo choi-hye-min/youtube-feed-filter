@@ -20,6 +20,7 @@
       '#video-title',
       'a[href*="/watch?v="][aria-label]'
     ]),
+    getActionDelay: (method) => method === 'api' ? 50 : 150,
     getObserverRoot: (root) => root.querySelector('#secondary') || root.querySelector('ytd-watch-flexy') || root.querySelector('ytd-app'),
     shouldReapply: (mutations) => mutations.some((mutation) => Array.from(mutation.addedNodes).some((node) =>
       node.nodeType === 1 && (node.matches?.('yt-lockup-view-model, ytd-compact-video-renderer, ytd-item-section-renderer') ||

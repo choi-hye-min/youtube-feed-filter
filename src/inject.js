@@ -183,7 +183,7 @@
             setTimeout(() => {
               stopSuppressingScroll();
               resolve(true);
-            }, 700);
+            }, pageType === 'watch' ? 200 : 700);
             return;
           }
         }

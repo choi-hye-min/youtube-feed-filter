@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Feed Filter",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Filter YouTube home and watch-page recommendations by upload date.",
   "permissions": [
     "tabs",

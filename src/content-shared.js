@@ -133,6 +133,17 @@
       element.replaceChildren(placeholder);
     }
 
+    function reservePlaceholderSlot(element) {
+      if (adapter.key !== 'watch' || !element.parentNode) return null;
+      const slot = document.createElement('div');
+      const height = element.offsetHeight;
+      slot.style.width = '100%';
+      if (height > 0) slot.style.height = `${height}px`;
+      slot.hidden = true;
+      element.parentNode.insertBefore(slot, element);
+      return slot;
+    }
+
     function performAction(element) {
       return new Promise((resolve) => {
         const requestId = `yt-skip-${adapter.key}-${Math.random().toString(36).slice(2, 11)}`;
@@ -163,6 +174,7 @@
       while (queue.length && !stopped) {
         const item = queue.shift();
         let actionMethod = null;
+        let placeholderSlot = null;
         try {
           let success = false;
           let element = item.element;
@@ -175,6 +187,9 @@
             }
 
             element.setAttribute(attribute('processed'), 'queued');
+            if (!placeholderSlot?.isConnected) {
+              placeholderSlot = reservePlaceholderSlot(element);
+            }
             const result = await performAction(element);
             success = result.success;
             actionMethod = result.method;
@@ -186,13 +201,21 @@
             stats.skipped++;
             chrome.runtime.sendMessage({ action: 'updateBadge', count: stats.skipped });
             element.setAttribute(attribute('processed'), 'done');
-            if (element.isConnected) renderPlaceholder(element, item.videoInfo);
+            if (element.isConnected) {
+              placeholderSlot?.remove();
+              renderPlaceholder(element, item.videoInfo);
+            } else if (placeholderSlot?.isConnected) {
+              placeholderSlot.hidden = false;
+              renderPlaceholder(placeholderSlot, item.videoInfo);
+            }
           } else if (element?.isConnected) {
             element.setAttribute(attribute('processed'), 'failed');
             console.error(`[youtube_skip:${adapter.key}] Failed after retries`, item.videoId);
           }
         } catch (error) {
           console.error(`[youtube_skip:${adapter.key}] Queue error`, error);
+        } finally {
+          if (placeholderSlot?.hidden) placeholderSlot.remove();
         }
         const actionDelay = adapter.getActionDelay?.(actionMethod) ?? 700;
         if (actionDelay > 0) {

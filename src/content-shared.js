@@ -76,13 +76,16 @@
     const style = document.createElement('style');
     style.id = 'youtube-skip-styles';
     style.textContent = `
-      .youtube-skip-placeholder { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; width:100%; min-height:96px; border-radius:12px; background:rgba(15,15,15,.06); color:var(--yt-spec-text-secondary,#606060); font:500 14px Roboto,Arial,sans-serif; box-sizing:border-box; text-align:center; }
+      .youtube-skip-placeholder { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; width:100%; min-height:96px; border-radius:12px; overflow:hidden; background:rgba(15,15,15,.06); color:var(--yt-spec-text-secondary,#606060); font:500 14px Roboto,Arial,sans-serif; box-sizing:border-box; text-align:center; }
+      .youtube-skip-placeholder::after { content:''; position:absolute; inset:-50%; pointer-events:none; background:linear-gradient(115deg, transparent 40%, rgba(255,255,255,.5) 50%, transparent 60%); transform:translateX(-70%); animation:youtube-skip-glass-flash 600ms ease-out both; }
       .youtube-skip-placeholder-title { color:var(--yt-spec-text-primary,#0f0f0f); font-size:15px; font-weight:600; }
       .youtube-skip-placeholder-video-title { max-width:90%; color:var(--yt-spec-text-primary,#0f0f0f); font-size:13px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
       .youtube-skip-placeholder-reason { max-width:92%; font-size:12px; font-weight:400; line-height:1.35; overflow-wrap:anywhere; }
       .youtube-skip-placeholder--watch { min-height:94px; border-radius:8px; overflow-anchor:none; }
       html[dark] .youtube-skip-placeholder, [dark] .youtube-skip-placeholder { background:rgba(255,255,255,.08); color:var(--yt-spec-text-secondary,#aaa); }
       html[dark] .youtube-skip-placeholder-title, [dark] .youtube-skip-placeholder-title, html[dark] .youtube-skip-placeholder-video-title, [dark] .youtube-skip-placeholder-video-title { color:var(--yt-spec-text-primary,#f1f1f1); }
+      @keyframes youtube-skip-glass-flash { from { transform:translateX(-70%); } to { transform:translateX(70%); } }
+      @media (prefers-reduced-motion: reduce) { .youtube-skip-placeholder::after { animation:none; display:none; } }
     `;
     (document.head || document.documentElement).appendChild(style);
   }

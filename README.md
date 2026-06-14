@@ -1,6 +1,6 @@
 # YouTube Feed Filter (유튜브 피드 필터)
 
-Current extension version: **1.5.0**
+Current extension version: **1.5.3**
 
 Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date and replace the recommendation card with a visible reason.
 업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리하고, 해당 추천 카드에 처리 사유를 표시합니다.
@@ -18,6 +18,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 | <subSmall>**상세 정보 표시**</subSmall> | <subSmall>플레이스홀더에 필터링된 영상의 **제목**을 추가하여 어떤 영상이 처리되었는지 명시</subSmall> |
 | <subSmall>**데이터 보존 및 재사용**</subSmall> | <subSmall>스크롤 시 요소가 재사용되어도 영상 제목이 유실되지 않도록 데이터 관리 최적화</subSmall> |
 | <subSmall>**다크 모드 최적화**</subSmall> | <subSmall>유튜브 다크 테마 환경에서도 제목과 텍스트가 잘 보이도록 색상 및 대비 조정</subSmall> |
+| <subSmall>**플레이스홀더 전환 효과**</subSmall> | <subSmall>추천 카드가 플레이스홀더로 교체될 때 짧은 글래스 플래시 효과를 표시</subSmall> |
 
 ---
 
@@ -37,6 +38,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 - **Stable Watch-Page Processing**: Reacquires recommendation cards after YouTube updates the DOM and prevents menu focus from moving the user's scroll position.
 - **Success-based Results**: Only confirmed feedback actions increment the skipped count and replace a recommendation with a placeholder.
 - **Visible Reason Placeholder**: Replaces processed feed cards with a "관심없음" placeholder and shows why the video was filtered, including upload age and the active threshold.
+- **Glass Flash Transition**: Shows a brief glass-like highlight when a recommendation is replaced with a placeholder, while respecting reduced-motion preferences.
 - **Real-time Statistics**: View compact Detected and Skipped counters above the threshold control.
 - **YouTube Dark Theme Popup UI**: Manage settings from a token-based popup designed around YouTube dark surfaces, borders, text colors, and brand red accents.
 - **Sequential Processing**: Processes feedback actions one at a time to avoid menu collisions and duplicate requests.
@@ -93,6 +95,7 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 - **Watch 페이지 처리 안정화**: 유튜브가 추천 DOM을 갱신하면 최신 카드를 다시 탐색하며, 메뉴 포커스로 인해 사용 중인 스크롤 위치가 이동하지 않도록 처리합니다.
 - **성공 결과만 반영**: 실제 feedback 처리가 확인된 영상만 Skipped 통계와 관심없음 플레이스홀더에 반영합니다.
 - **처리 사유 표시**: 처리된 피드 카드를 삭제하지 않고 "관심없음" 영역으로 바꾼 뒤, 업로드 시점과 적용된 기준을 함께 표시합니다.
+- **글래스 플래시 전환**: 추천 카드가 플레이스홀더로 교체될 때 짧은 광택 효과를 표시하며, 모션 감소 환경설정을 따릅니다.
 - **실시간 통계**: 시간 기준 설정 위에서 간결한 Detected 및 Skipped 통계를 확인할 수 있습니다.
 - **유튜브 다크 테마 팝업 UI**: 유튜브 다크 테마의 배경, 표면, 테두리, 텍스트 색상, 브랜드 레드 포인트를 디자인 토큰으로 정의해 적용했습니다.
 - **순차 처리**: 메뉴 충돌과 중복 요청을 막기 위해 feedback 작업을 한 번에 하나씩 처리합니다.

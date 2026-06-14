@@ -38,6 +38,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 - **Stable Watch-Page Processing**: Reacquires recommendation cards after YouTube updates the DOM and prevents menu focus from moving the user's scroll position.
 - **Success-based Results**: Only confirmed feedback actions increment the skipped count and replace a recommendation with a placeholder.
 - **Visible Reason Placeholder**: Replaces processed feed cards with a "관심없음" placeholder and shows why the video was filtered, including upload age and the active threshold.
+- **Home Feed Refresh Reset**: Clears existing placeholders before YouTube refreshes the home feed through in-page navigation, then evaluates the new recommendations again.
 - **Glass Flash Transition**: Shows a brief glass-like highlight when a recommendation is replaced with a placeholder, while respecting reduced-motion preferences.
 - **Real-time Statistics**: View compact Detected and Skipped counters above the threshold control.
 - **YouTube Dark Theme Popup UI**: Manage settings from a token-based popup designed around YouTube dark surfaces, borders, text colors, and brand red accents.
@@ -95,6 +96,7 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 - **Watch 페이지 처리 안정화**: 유튜브가 추천 DOM을 갱신하면 최신 카드를 다시 탐색하며, 페이지 전환 중인 이전 요청과 YouTube의 추천 카드 DOM 후처리가 충돌하지 않도록 처리합니다.
 - **성공 결과만 반영**: 실제 feedback 처리가 확인된 영상만 Skipped 통계와 관심없음 플레이스홀더에 반영합니다.
 - **처리 사유 표시**: 처리된 피드 카드를 삭제하지 않고 "관심없음" 영역으로 바꾼 뒤, 업로드 시점과 적용된 기준을 함께 표시합니다.
+- **홈 피드 갱신 초기화**: 유튜브 로고 클릭 등 페이지 내 이동으로 홈 피드가 갱신되기 전에 기존 플레이스홀더를 초기화하고 새 추천 영상을 다시 검사합니다.
 - **글래스 플래시 전환**: 추천 카드가 플레이스홀더로 교체될 때 짧은 광택 효과를 표시하며, 모션 감소 환경설정을 따릅니다.
 - **실시간 통계**: 시간 기준 설정 위에서 간결한 Detected 및 Skipped 통계를 확인할 수 있습니다.
 - **유튜브 다크 테마 팝업 UI**: 유튜브 다크 테마의 배경, 표면, 테두리, 텍스트 색상, 브랜드 레드 포인트를 디자인 토큰으로 정의해 적용했습니다.

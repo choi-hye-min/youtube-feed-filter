@@ -92,6 +92,7 @@
 
   function createRuntime(adapter, filterState) {
     const processedVideos = new Map();
+    const originalChildren = new WeakMap();
     const queue = [];
     let processing = false;
     let observer = null;
@@ -133,7 +134,25 @@
         }
       }
       element.setAttribute(attribute('placeholder'), 'true');
+      originalChildren.set(element, Array.from(element.childNodes));
       element.replaceChildren(placeholder);
+    }
+
+    function reset() {
+      processedVideos.clear();
+      const runtimeSelector = [
+        `[${attribute('processed')}]`,
+        `[${attribute('placeholder')}]`,
+        `[${attribute('video-id')}]`
+      ].join(', ');
+      for (const element of document.querySelectorAll(runtimeSelector)) {
+        const children = originalChildren.get(element);
+        if (children) element.replaceChildren(...children);
+        element.removeAttribute(attribute('processed'));
+        element.removeAttribute(attribute('placeholder'));
+        element.removeAttribute(attribute('video-id'));
+        element.removeAttribute('data-youtube-skip-id');
+      }
     }
 
     function reservePlaceholderSlot(element) {
@@ -211,7 +230,7 @@
               placeholderSlot.hidden = false;
               renderPlaceholder(placeholderSlot, item.videoInfo);
             }
-          } else if (element?.isConnected) {
+          } else if (!stopped && element?.isConnected) {
             element.setAttribute(attribute('processed'), 'failed');
             console.error(`[youtube_skip:${adapter.key}] Failed after retries`, item.videoId);
           }
@@ -312,7 +331,7 @@
       debugLog('Stopped');
     }
 
-    return { start, stop, apply };
+    return { start, stop, apply, reset };
   }
 
   window.YouTubeSkipShared = {

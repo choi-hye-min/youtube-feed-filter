@@ -44,6 +44,14 @@
     }
   }
 
+  function resetHomePage() {
+    if (activePageKey !== 'home') return;
+    runtime?.stop();
+    runtime?.reset();
+    runtime = null;
+    activePageKey = null;
+  }
+
   function loadState(callback) {
     chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
       if (response) Object.assign(filterState, response);
@@ -68,6 +76,7 @@
   function init() {
     injectMainScript();
     loadState(activatePage);
+    document.addEventListener('yt-navigate-start', resetHomePage);
     document.addEventListener('yt-navigate-finish', activatePage);
     window.addEventListener('popstate', activatePage);
   }

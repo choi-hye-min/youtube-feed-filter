@@ -1,0 +1,4 @@
+interface:
+  display_name: "확장 프로그램 릴리스 동기화"
+  short_description: "확장 버전과 관련 프로젝트 문서를 함께 동기화"
+  default_prompt: "$sync-extension-release를 사용하여 현재 버전을 확인하고 추천 버전을 선택한 뒤 관련 문서를 업데이트해 주세요."

@@ -208,6 +208,15 @@
 
   window.addEventListener('youtube-skip-action', async function(e) {
     const { videoId, pageType = 'home' } = e.detail;
+
+    const currentPageType = window.location.pathname === '/watch'
+      ? 'watch'
+      : (window.location.pathname === '/' || window.location.pathname === '' ? 'home' : null);
+    if (pageType !== currentPageType) {
+      sendResponse(false, 'stale_page');
+      return;
+    }
+
     const videoElement = document.querySelector(`[data-youtube-skip-id="${videoId}"]`);
     
     function sendResponse(success, method) {
@@ -245,7 +254,11 @@
         const resolver = (ytdApp.resolveCommand || ytdApp.resolve).bind(ytdApp);
         resolver(command);
         console.log('[youtube_skip] v1/feedback triggered via API for:', videoId);
-        sendResponse(true, 'api');
+        if (pageType === 'watch') {
+          setTimeout(() => sendResponse(true, 'api'), 200);
+        } else {
+          sendResponse(true, 'api');
+        }
         return;
       }
 

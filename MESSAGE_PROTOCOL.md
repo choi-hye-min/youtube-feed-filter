@@ -99,12 +99,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 ---
 
+### 5. getAuthState
+**From**: popup.js  
+**To**: content-script.js  
+**Purpose**: Check whether the active YouTube tab is signed in before exposing filtering controls
+
+```javascript
+chrome.tabs.sendMessage(tab.id, {
+  action: 'getAuthState'
+}, (response) => {
+  console.log('YouTube auth state:', response.authState);
+});
+```
+
+**Response**:
+```javascript
+{ authState: 'signed-in' } // 'signed-in', 'signed-out', or 'unknown'
+```
+
+---
+
+### 6. updateBadge
+**From**: content-script.js  
+**To**: background.js  
+**Purpose**: Update the extension icon badge with Detected and Skipped counts
+
+```javascript
+chrome.runtime.sendMessage({
+  action: 'updateBadge',
+  detected: 12,
+  skipped: 3
+});
+```
+
+**Badge Text**:
+```text
+12:3
+```
+
+---
+
 ## Storage Keys
 
 All extension state is stored in `chrome.storage.local`:
 
-- **`filter_threshold`**: Current time threshold ('1week', '2weeks', '1month', '3months', '6months')
+- **`filter_threshold`**: Current time threshold ('1day', '2days', '3days', '4days', '5days', '1week', '2weeks', '1month', '3months', '6months')
 - **`filter_enabled`**: Boolean indicating if filter is active (true/false)
+- **`home_filter_enabled`**: Boolean indicating if home feed filtering is active
+- **`watch_filter_enabled`**: Boolean indicating if watch-page recommendation filtering is active
+- **`logging_enabled`**: Boolean indicating if debug logging is active
 
 ---
 
@@ -112,6 +155,7 @@ All extension state is stored in `chrome.storage.local`:
 
 - If content script is not loaded on a tab, `chrome.tabs.sendMessage()` fails silently (wrapped in `.catch()`)
 - If storage keys are missing, defaults are applied (1month, enabled=true)
+- If the YouTube page is signed out, content script stops the active runtime and shows a sign-in notice
 - Upload age extraction gracefully returns `null` if time text cannot be found on a video
 
 ---

@@ -89,8 +89,18 @@
     const watchSelectors = [
         '.ytLockupMetadataViewModelMenuButton button[aria-label="추가 작업"]',
         '.ytLockupMetadataViewModelMenuButton button',
+        'yt-lockup-metadata-view-model button[aria-label*="추가"]',
+        'yt-lockup-metadata-view-model button[aria-label*="작업"]',
+        'yt-lockup-metadata-view-model button[aria-label*="Action"]',
+        'yt-lockup-metadata-view-model button[aria-label*="menu"]',
+        'button-view-model button[aria-label*="추가"]',
+        'button-view-model button[aria-label*="Action"]',
+        'yt-button-shape button[aria-label*="추가"]',
+        'yt-button-shape button[aria-label*="Action"]',
         'button[aria-label="Action menu"]',
+        'button[aria-label*="Action"]',
         'button[aria-label*="추가 작업"]',
+        'button[aria-label*="작업 메뉴"]',
         'ytd-menu-renderer button'
     ];
     const selectors = pageType === 'watch' ? watchSelectors : homeSelectors;

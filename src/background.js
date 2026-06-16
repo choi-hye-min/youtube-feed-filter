@@ -117,9 +117,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // Will respond asynchronously
   } else if (request.action === 'updateBadge') {
-    const count = request.count > 0 ? request.count.toString() : '';
+    const detected = Number.isFinite(request.detected) ? request.detected : 0;
+    const skipped = Number.isFinite(request.skipped) ? request.skipped : 0;
     chrome.action.setBadgeText({
-      text: count,
+      text: `${detected}:${skipped}`,
       tabId: sender.tab.id
     });
     chrome.action.setBadgeBackgroundColor({

@@ -21,6 +21,14 @@
 
   const stats = { detected: 0, skipped: 0 };
 
+  function updateBadge() {
+    chrome.runtime.sendMessage({
+      action: 'updateBadge',
+      detected: stats.detected,
+      skipped: stats.skipped
+    });
+  }
+
   function findAgeInText(text) {
     if (!text) return null;
     const match = text.match(/(\d+)\s*(minute|hour|day|week|month|year|시간|분|일|주|달|월|년|개월)s?\s*(ago|전)/i);
@@ -82,12 +90,36 @@
       .youtube-skip-placeholder-video-title { max-width:90%; color:var(--yt-spec-text-primary,#0f0f0f); font-size:13px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
       .youtube-skip-placeholder-reason { max-width:92%; font-size:12px; font-weight:400; line-height:1.35; overflow-wrap:anywhere; }
       .youtube-skip-placeholder--watch { min-height:94px; border-radius:8px; overflow-anchor:none; }
+      .youtube-skip-signin-notice { position:fixed; left:16px; bottom:16px; z-index:2147483647; max-width:min(360px, calc(100vw - 32px)); padding:12px 14px; border-radius:8px; background:var(--yt-spec-raised-background,#fff); border:1px solid rgba(0,0,0,.14); box-shadow:0 6px 18px rgba(0,0,0,.18); color:var(--yt-spec-text-primary,#0f0f0f); font:500 13px/1.4 Roboto,Arial,sans-serif; }
+      .youtube-skip-signin-notice-title { margin-bottom:3px; font-size:14px; font-weight:700; }
+      .youtube-skip-signin-notice-body { color:var(--yt-spec-text-secondary,#606060); font-weight:400; }
       html[dark] .youtube-skip-placeholder, [dark] .youtube-skip-placeholder { background:rgba(255,255,255,.08); color:var(--yt-spec-text-secondary,#aaa); }
       html[dark] .youtube-skip-placeholder-title, [dark] .youtube-skip-placeholder-title, html[dark] .youtube-skip-placeholder-video-title, [dark] .youtube-skip-placeholder-video-title { color:var(--yt-spec-text-primary,#f1f1f1); }
+      html[dark] .youtube-skip-signin-notice, [dark] .youtube-skip-signin-notice { background:var(--yt-spec-raised-background,#212121); border-color:rgba(255,255,255,.18); color:var(--yt-spec-text-primary,#f1f1f1); }
+      html[dark] .youtube-skip-signin-notice-body, [dark] .youtube-skip-signin-notice-body { color:var(--yt-spec-text-secondary,#aaa); }
       @keyframes youtube-skip-glass-flash { from { transform:translateX(-70%); } to { transform:translateX(70%); } }
       @media (prefers-reduced-motion: reduce) { .youtube-skip-placeholder::after { animation:none; display:none; } }
     `;
     (document.head || document.documentElement).appendChild(style);
+  }
+
+  function showSignInNotice() {
+    installStyles();
+    if (document.getElementById('youtube-skip-signin-notice')) return;
+
+    const notice = document.createElement('div');
+    notice.id = 'youtube-skip-signin-notice';
+    notice.className = 'youtube-skip-signin-notice';
+    notice.setAttribute('role', 'status');
+    notice.innerHTML = [
+      '<div class="youtube-skip-signin-notice-title">YouTube 로그인이 필요합니다</div>',
+      '<div class="youtube-skip-signin-notice-body">로그인한 사용자에게만 자동 관심없음 필터링이 작동합니다.</div>'
+    ].join('');
+    document.body?.appendChild(notice);
+  }
+
+  function hideSignInNotice() {
+    document.getElementById('youtube-skip-signin-notice')?.remove();
   }
 
   function createRuntime(adapter, filterState) {
@@ -221,7 +253,7 @@
           if (success && !stopped) {
             if (item.videoId) processedVideos.set(item.videoId, item.videoInfo);
             stats.skipped++;
-            chrome.runtime.sendMessage({ action: 'updateBadge', count: stats.skipped });
+            updateBadge();
             element.setAttribute(attribute('processed'), 'done');
             if (element.isConnected) {
               placeholderSlot?.remove();
@@ -290,6 +322,7 @@
         const state = element.getAttribute(attribute('processed'));
         if (['queued', 'done', 'checked', 'failed'].includes(state)) continue;
         stats.detected++;
+        updateBadge();
         element.setAttribute(attribute('processed'), 'detected');
 
         const age = adapter.extractAge(element);
@@ -338,6 +371,8 @@
     createRuntime,
     findAgeInElement,
     firstText,
+    showSignInNotice,
+    hideSignInNotice,
     getStats: () => ({ ...stats })
   };
 })();

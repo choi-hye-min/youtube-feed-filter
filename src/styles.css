@@ -132,6 +132,37 @@ h1 {
     color: var(--yt-color-text-secondary);
 }
 
+.status-pill.is-warning {
+    background: rgba(251, 192, 45, 0.14);
+    border-color: rgba(251, 192, 45, 0.5);
+    color: #ffd76a;
+}
+
+.signin-notice {
+    display: grid;
+    gap: 3px;
+    padding: 9px 10px;
+    border-radius: var(--yt-radius-panel);
+    background: rgba(251, 192, 45, 0.1);
+    border: 1px solid rgba(251, 192, 45, 0.35);
+    color: var(--yt-color-text-primary);
+}
+
+.signin-notice[hidden] {
+    display: none;
+}
+
+.signin-notice strong {
+    font-size: 13px;
+    line-height: 1.25;
+}
+
+.signin-notice span {
+    color: var(--yt-color-text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
 .controls-panel {
     padding: var(--yt-space-3);
 }
@@ -206,6 +237,10 @@ select option {
 .page-toggle-group.is-disabled {
     opacity: 0.45;
     pointer-events: none;
+}
+
+.controls-panel.is-disabled {
+    opacity: 0.58;
 }
 
 .toggle-row {

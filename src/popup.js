@@ -11,10 +11,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const enableHomeFilter = document.getElementById('enable-home-filter');
   const enableWatchFilter = document.getElementById('enable-watch-filter');
   const pageToggleGroup = document.querySelector('.page-toggle-group');
+  const controlsPanel = document.querySelector('.controls-panel');
   const enableLogging = document.getElementById('enable-logging');
   const statusDiv = document.getElementById('status');
+  const signinNotice = document.getElementById('signin-notice');
   const detectedCountSpan = document.getElementById('detected-count');
   const skippedCountSpan = document.getElementById('skipped-count');
+  let authState = 'unknown';
   const thresholdLabels = {
     '1day': '1 Day',
     '2days': '2 Days',
@@ -50,12 +53,16 @@ document.addEventListener('DOMContentLoaded', () => {
     enableLogging.checked = savedLogging;
     
     updateStatus(savedThreshold, savedEnabled, savedHomeEnabled, savedWatchEnabled);
-    updatePageToggleAvailability(savedEnabled);
+    updateControlAvailability(savedEnabled);
+    updateAuthState();
     updateStats();
   });
 
   // Periodically update stats while popup is open
-  const statsInterval = setInterval(updateStats, 1000);
+  const statsInterval = setInterval(() => {
+    updateStats();
+    updateAuthState();
+  }, 1000);
   
   // Cleanup interval when popup closes
   window.addEventListener('unload', () => {
@@ -72,6 +79,27 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
       }
+    });
+  }
+
+  function updateAuthState() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.url?.includes('youtube.com')) return;
+
+      chrome.tabs.sendMessage(tab.id, { action: 'getAuthState' }, (response) => {
+        if (chrome.runtime.lastError || !response?.authState) return;
+        authState = response.authState;
+        chrome.storage.local.get(['filter_threshold'], (result) => {
+          updateStatus(
+            result.filter_threshold || '1month',
+            enableFilter.checked,
+            enableHomeFilter.checked,
+            enableWatchFilter.checked
+          );
+          updateControlAvailability(enableFilter.checked);
+        });
+      });
     });
   }
   
@@ -103,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response && response.success) {
           chrome.storage.local.get(['filter_threshold'], (result) => {
             updateStatus(result.filter_threshold || '1month', enabled, enableHomeFilter.checked, enableWatchFilter.checked);
-            updatePageToggleAvailability(enabled);
+            updateControlAvailability(enabled);
           });
         }
       });
@@ -148,18 +176,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  function updatePageToggleAvailability(enabled) {
-    pageToggleGroup.classList.toggle('is-disabled', !enabled);
-    enableHomeFilter.disabled = !enabled;
-    enableWatchFilter.disabled = !enabled;
+  function updateControlAvailability(enabled) {
+    const requiresSignIn = authState === 'signed-out';
+    controlsPanel.classList.toggle('is-disabled', requiresSignIn);
+    signinNotice.hidden = !requiresSignIn;
+    thresholdSelect.disabled = requiresSignIn;
+    enableFilter.disabled = requiresSignIn;
+    pageToggleGroup.classList.toggle('is-disabled', !enabled || requiresSignIn);
+    enableHomeFilter.disabled = !enabled || requiresSignIn;
+    enableWatchFilter.disabled = !enabled || requiresSignIn;
   }
 
   function updateStatus(threshold, enabled, homeEnabled, watchEnabled) {
     const activePages = [homeEnabled && 'Main', watchEnabled && 'Watch'].filter(Boolean);
     const isActive = enabled && activePages.length > 0;
-    statusDiv.classList.toggle('is-inactive', !isActive);
+    const requiresSignIn = authState === 'signed-out';
+    statusDiv.classList.toggle('is-inactive', !isActive && !requiresSignIn);
+    statusDiv.classList.toggle('is-warning', requiresSignIn);
 
-    if (!isActive) {
+    if (requiresSignIn) {
+      statusDiv.textContent = 'Sign in Required';
+    } else if (!isActive) {
       statusDiv.textContent = 'Filter Inactive';
     } else {
       const thresholdLabel = thresholdLabels[threshold] || threshold;

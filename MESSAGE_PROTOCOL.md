@@ -122,7 +122,7 @@ chrome.tabs.sendMessage(tab.id, {
 ### 6. updateBadge
 **From**: content-script.js  
 **To**: background.js  
-**Purpose**: Update the extension icon badge with Detected and Skipped counts
+**Purpose**: Update the extension icon badge with the Skipped count
 
 ```javascript
 chrome.runtime.sendMessage({
@@ -134,7 +134,7 @@ chrome.runtime.sendMessage({
 
 **Badge Text**:
 ```text
-12:3
+3
 ```
 
 ---

@@ -1,6 +1,6 @@
 # YouTube Feed Filter (유튜브 피드 필터)
 
-Current extension version: **1.6.0**
+Current extension version: **1.6.1**
 
 Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date and replace the recommendation card with a visible reason.
 업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리하고, 해당 추천 카드에 처리 사유를 표시합니다.
@@ -15,7 +15,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 | <subSmall>**로그인 상태 안내**</subSmall> | <subSmall>YouTube 미로그인 상태에서는 자동 관심없음 필터링을 중단하고 로그인 필요 안내를 표시</subSmall> |
 | <subSmall>**Watch 처리 안정화**</subSmall> | <subSmall>추천 목록 갱신 시 최신 카드 DOM을 다시 탐색하고, 페이지 전환 중인 이전 요청과 YouTube DOM 후처리 충돌을 방지</subSmall> |
 | <subSmall>**성공 결과만 반영**</subSmall> | <subSmall>실제 `feedback` 처리가 성공한 영상만 Skipped 통계와 관심없음 플레이스홀더에 반영</subSmall> |
-| <subSmall>**확장 아이콘 통계 배지**</subSmall> | <subSmall>확장 아이콘 배지에 Detected/Skipped 값을 `0:0` 형식으로 표시</subSmall> |
+| <subSmall>**확장 아이콘 통계 배지**</subSmall> | <subSmall>확장 아이콘 배지에 Skipped 값만 표시</subSmall> |
 | <subSmall>**간결한 팝업 UI**</subSmall> | <subSmall>Detected/Skipped 통계를 필터 설정 위로 이동하고 팝업을 세로 스크롤 없이 사용할 수 있도록 압축</subSmall> |
 | <subSmall>**상세 정보 표시**</subSmall> | <subSmall>플레이스홀더에 필터링된 영상의 **제목**을 추가하여 어떤 영상이 처리되었는지 명시</subSmall> |
 | <subSmall>**데이터 보존 및 재사용**</subSmall> | <subSmall>스크롤 시 요소가 재사용되어도 영상 제목이 유실되지 않도록 데이터 관리 최적화</subSmall> |
@@ -44,7 +44,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 - **Home Feed Refresh Reset**: Clears existing placeholders before YouTube refreshes the home feed through in-page navigation, then evaluates the new recommendations again.
 - **Glass Flash Transition**: Shows a brief glass-like highlight when a recommendation is replaced with a placeholder, while respecting reduced-motion preferences.
 - **Real-time Statistics**: View compact Detected and Skipped counters above the threshold control.
-- **Icon Badge Counts**: Shows Detected and Skipped counts on the extension icon as `0:0`.
+- **Icon Badge Counts**: Shows only the Skipped count on the extension icon.
 - **YouTube Dark Theme Popup UI**: Manage settings from a token-based popup designed around YouTube dark surfaces, borders, text colors, and brand red accents.
 - **Sequential Processing**: Processes feedback actions one at a time to avoid menu collisions and duplicate requests.
 - **Locale Support**: Fully supports both English and Korean YouTube interfaces.
@@ -105,7 +105,7 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 - **홈 피드 갱신 초기화**: 유튜브 로고 클릭 등 페이지 내 이동으로 홈 피드가 갱신되기 전에 기존 플레이스홀더를 초기화하고 새 추천 영상을 다시 검사합니다.
 - **글래스 플래시 전환**: 추천 카드가 플레이스홀더로 교체될 때 짧은 광택 효과를 표시하며, 모션 감소 환경설정을 따릅니다.
 - **실시간 통계**: 시간 기준 설정 위에서 간결한 Detected 및 Skipped 통계를 확인할 수 있습니다.
-- **아이콘 배지 통계**: 확장 프로그램 아이콘에 Detected/Skipped 값을 `0:0` 형식으로 표시합니다.
+- **아이콘 배지 통계**: 확장 프로그램 아이콘에 Skipped 값만 표시합니다.
 - **유튜브 다크 테마 팝업 UI**: 유튜브 다크 테마의 배경, 표면, 테두리, 텍스트 색상, 브랜드 레드 포인트를 디자인 토큰으로 정의해 적용했습니다.
 - **순차 처리**: 메뉴 충돌과 중복 요청을 막기 위해 feedback 작업을 한 번에 하나씩 처리합니다.
 - **다국어 지원**: 유튜브의 영어 및 한국어 인터페이스를 완벽하게 지원합니다.

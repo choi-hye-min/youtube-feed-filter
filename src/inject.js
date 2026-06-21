@@ -75,6 +75,7 @@
     );
 
     const homeSelectors = [
+        '.ytLockupMetadataViewModelMenuButton button[aria-label="추가 작업"]',
         'button[aria-label*="메뉴"]', 
         'button[aria-label*="menu"]', 
         'button[aria-label*="Action"]',

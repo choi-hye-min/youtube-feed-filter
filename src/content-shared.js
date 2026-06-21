@@ -188,7 +188,7 @@
     }
 
     function reservePlaceholderSlot(element) {
-      if (adapter.key !== 'watch' || !element.parentNode) return null;
+      if (!element.parentNode) return null;
       const slot = document.createElement('div');
       const height = element.offsetHeight;
       slot.style.width = '100%';
@@ -254,7 +254,11 @@
             if (item.videoId) processedVideos.set(item.videoId, item.videoInfo);
             stats.skipped++;
             updateBadge();
+            if (!element.isConnected) {
+              element = adapter.findReplacementElement?.(placeholderSlot) || element;
+            }
             element.setAttribute(attribute('processed'), 'done');
+            if (item.videoId) element.setAttribute(attribute('video-id'), item.videoId);
             if (element.isConnected) {
               placeholderSlot?.remove();
               renderPlaceholder(element, item.videoInfo);

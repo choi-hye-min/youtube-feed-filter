@@ -85,6 +85,8 @@
     style.id = 'youtube-skip-styles';
     style.textContent = `
       .youtube-skip-placeholder { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; width:100%; min-height:96px; border-radius:12px; overflow:hidden; background:rgba(15,15,15,.06); color:var(--yt-spec-text-secondary,#606060); font:500 14px Roboto,Arial,sans-serif; box-sizing:border-box; text-align:center; }
+      .youtube-skip-placeholder-slot { position:relative; }
+      .youtube-skip-placeholder-slot > .youtube-skip-placeholder { position:absolute; inset:0; height:100%; min-height:0; }
       .youtube-skip-placeholder::after { content:''; position:absolute; inset:-50%; pointer-events:none; background:linear-gradient(115deg, transparent 40%, rgba(255,255,255,.5) 50%, transparent 60%); transform:translateX(-70%); animation:youtube-skip-glass-flash 600ms ease-out both; }
       .youtube-skip-placeholder-title { color:var(--yt-spec-text-primary,#0f0f0f); font-size:15px; font-weight:600; }
       .youtube-skip-placeholder-video-title { max-width:90%; color:var(--yt-spec-text-primary,#0f0f0f); font-size:13px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -125,6 +127,8 @@
   function createRuntime(adapter, filterState) {
     const processedVideos = new Map();
     const originalChildren = new WeakMap();
+    const hiddenElements = new Set();
+    const placeholderSlots = new Set();
     const queue = [];
     let processing = false;
     let observer = null;
@@ -172,6 +176,17 @@
 
     function reset() {
       processedVideos.clear();
+      for (const record of placeholderSlots) {
+        record.slot.remove();
+      }
+      placeholderSlots.clear();
+      for (const slot of document.querySelectorAll(`[${attribute('slot')}]`)) {
+        slot.remove();
+      }
+      for (const element of hiddenElements) {
+        if (element.isConnected) element.hidden = false;
+      }
+      hiddenElements.clear();
       const runtimeSelector = [
         `[${attribute('processed')}]`,
         `[${attribute('placeholder')}]`,
@@ -189,13 +204,56 @@
 
     function reservePlaceholderSlot(element) {
       if (!element.parentNode) return null;
-      const slot = document.createElement('div');
+      const slot = document.createElement(adapter.key === 'home' ? element.tagName.toLowerCase() : 'div');
       const height = element.offsetHeight;
-      slot.style.width = '100%';
+      if (adapter.key === 'home') {
+        slot.className = `${element.className} youtube-skip-placeholder-slot`.trim();
+        slot.setAttribute(attribute('slot'), 'true');
+      } else {
+        slot.style.width = '100%';
+      }
       if (height > 0) slot.style.height = `${height}px`;
       slot.hidden = true;
       element.parentNode.insertBefore(slot, element);
       return slot;
+    }
+
+    function rememberPlaceholderSlot(slot, dismissedElement, videoInfo) {
+      const parent = slot.parentElement;
+      if (!parent) return;
+      const children = Array.from(parent.children);
+      const index = children.indexOf(slot);
+      const previousSibling = children.slice(0, index).reverse().find((child) =>
+        child !== dismissedElement && !child.hasAttribute(attribute('slot'))
+      ) || null;
+      const nextSibling = children.slice(index + 1).find((child) =>
+        child !== dismissedElement && !child.hasAttribute(attribute('slot'))
+      ) || null;
+      placeholderSlots.add({ slot, parent, previousSibling, nextSibling, index, videoInfo });
+    }
+
+    function restorePlaceholderSlots() {
+      for (const record of placeholderSlots) {
+        if (!record.slot.isConnected) {
+          if (!record.parent.isConnected) continue;
+          if (record.previousSibling?.parentElement === record.parent) {
+            record.parent.insertBefore(record.slot, record.previousSibling.nextElementSibling);
+          } else if (record.nextSibling?.parentElement === record.parent) {
+            record.parent.insertBefore(record.slot, record.nextSibling);
+          } else {
+            record.parent.insertBefore(record.slot, record.parent.children[record.index] || null);
+          }
+        }
+        if (!record.slot.querySelector('.youtube-skip-placeholder')) {
+          record.slot.removeAttribute(attribute('placeholder'));
+          renderPlaceholder(record.slot, record.videoInfo);
+        }
+        const replacement = adapter.findReplacementElement?.(record.slot);
+        if (replacement && !replacement.hidden) {
+          replacement.hidden = true;
+          hiddenElements.add(replacement);
+        }
+      }
     }
 
     function performAction(element) {
@@ -254,17 +312,31 @@
             if (item.videoId) processedVideos.set(item.videoId, item.videoInfo);
             stats.skipped++;
             updateBadge();
-            if (!element.isConnected) {
-              element = adapter.findReplacementElement?.(placeholderSlot) || element;
-            }
-            element.setAttribute(attribute('processed'), 'done');
-            if (item.videoId) element.setAttribute(attribute('video-id'), item.videoId);
-            if (element.isConnected) {
-              placeholderSlot?.remove();
-              renderPlaceholder(element, item.videoInfo);
-            } else if (placeholderSlot?.isConnected) {
+            if (adapter.key === 'home' && placeholderSlot?.isConnected) {
+              const dismissedElement = adapter.findReplacementElement?.(placeholderSlot)
+                || (element.isConnected ? element : null);
+              if (dismissedElement) {
+                dismissedElement.hidden = true;
+                hiddenElements.add(dismissedElement);
+              }
+              rememberPlaceholderSlot(placeholderSlot, dismissedElement, item.videoInfo);
+              placeholderSlot.setAttribute(attribute('processed'), 'done');
+              if (item.videoId) placeholderSlot.setAttribute(attribute('video-id'), item.videoId);
               placeholderSlot.hidden = false;
               renderPlaceholder(placeholderSlot, item.videoInfo);
+            } else {
+              if (!element.isConnected) {
+                element = adapter.findReplacementElement?.(placeholderSlot) || element;
+              }
+              element.setAttribute(attribute('processed'), 'done');
+              if (item.videoId) element.setAttribute(attribute('video-id'), item.videoId);
+              if (element.isConnected) {
+                placeholderSlot?.remove();
+                renderPlaceholder(element, item.videoInfo);
+              } else if (placeholderSlot?.isConnected) {
+                placeholderSlot.hidden = false;
+                renderPlaceholder(placeholderSlot, item.videoInfo);
+              }
             }
           } else if (!stopped && element?.isConnected) {
             element.setAttribute(attribute('processed'), 'failed');
@@ -306,6 +378,7 @@
       if (!filterState.enabled || !adapter.matchesPath(window.location.pathname)) return;
       const thresholdMs = THRESHOLD_PRESETS[filterState.threshold];
       if (!thresholdMs) return;
+      restorePlaceholderSlots();
 
       for (const candidate of adapter.findCandidates(document)) {
         const element = adapter.normalizeCandidate(candidate);

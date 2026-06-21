@@ -1,6 +1,6 @@
 # YouTube Feed Filter (유튜브 피드 필터)
 
-Current extension version: **1.6.2**
+Current extension version: **1.6.3**
 
 Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date and replace the recommendation card with a visible reason.
 업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리하고, 해당 추천 카드에 처리 사유를 표시합니다.
@@ -15,7 +15,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 | <subSmall>**로그인 상태 안내**</subSmall> | <subSmall>YouTube 미로그인 상태에서는 자동 관심없음 필터링을 중단하고 로그인 필요 안내를 표시</subSmall> |
 | <subSmall>**Watch 처리 안정화**</subSmall> | <subSmall>추천 목록 갱신 시 최신 카드 DOM을 다시 탐색하고, 페이지 전환 중인 이전 요청과 YouTube DOM 후처리 충돌을 방지</subSmall> |
 | <subSmall>**성공 결과만 반영**</subSmall> | <subSmall>실제 `feedback` 처리가 성공한 영상만 Skipped 통계와 관심없음 플레이스홀더에 반영</subSmall> |
-| <subSmall>**Lazy-load 카드 교체 대응**</subSmall> | <subSmall>홈 최하단에서 추가된 추천 카드가 YouTube의 `동영상 숨김` 결과로 교체되어도 관심없음 플레이스홀더를 유지</subSmall> |
+| <subSmall>**Lazy-load 카드 교체 대응**</subSmall> | <subSmall>홈 최하단에서 피드가 추가될 때 YouTube가 `동영상 숨김` 결과 카드를 정리해도 독립 슬롯으로 관심없음 플레이스홀더를 유지</subSmall> |
 | <subSmall>**확장 아이콘 통계 배지**</subSmall> | <subSmall>확장 아이콘 배지에 Skipped 값만 표시</subSmall> |
 | <subSmall>**간결한 팝업 UI**</subSmall> | <subSmall>Detected/Skipped 통계를 필터 설정 위로 이동하고 팝업을 세로 스크롤 없이 사용할 수 있도록 압축</subSmall> |
 | <subSmall>**상세 정보 표시**</subSmall> | <subSmall>플레이스홀더에 필터링된 영상의 **제목**을 추가하여 어떤 영상이 처리되었는지 명시</subSmall> |
@@ -41,7 +41,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 - **Signed-in YouTube Only**: Filtering runs only when the current YouTube page is signed in, with popup and page notices when sign-in is required.
 - **Stable Watch-Page Processing**: Reacquires recommendation cards after YouTube updates the DOM and prevents menu focus from moving the user's scroll position.
 - **Success-based Results**: Only confirmed feedback actions increment the skipped count and replace a recommendation with a placeholder.
-- **Visible Reason Placeholder**: Replaces processed feed cards with a "관심없음" placeholder and shows why the video was filtered, including upload age and the active threshold.
+- **Visible Reason Placeholder**: Covers processed home feed cards with an extension-owned "관심없음" placeholder and shows why the video was filtered, including upload age and the active threshold.
 - **Home Feed Refresh Reset**: Clears existing placeholders before YouTube refreshes the home feed through in-page navigation, then evaluates the new recommendations again.
 - **Glass Flash Transition**: Shows a brief glass-like highlight when a recommendation is replaced with a placeholder, while respecting reduced-motion preferences.
 - **Real-time Statistics**: View compact Detected and Skipped counters above the threshold control.

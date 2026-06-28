@@ -275,7 +275,7 @@
 
         window.addEventListener('youtube-skip-response', onResponse);
         window.dispatchEvent(new CustomEvent('youtube-skip-action', {
-          detail: { videoId: requestId, pageType: adapter.key }
+          detail: { videoId: requestId, pageType: adapter.key, loggingEnabled: filterState.loggingEnabled }
         }));
       });
     }
@@ -340,7 +340,7 @@
             }
           } else if (!stopped && element?.isConnected) {
             element.setAttribute(attribute('processed'), 'failed');
-            console.error(`[youtube_skip:${adapter.key}] Failed after retries`, item.videoId);
+            debugLog('Failed after retries', item.videoId);
           }
         } catch (error) {
           console.error(`[youtube_skip:${adapter.key}] Queue error`, error);

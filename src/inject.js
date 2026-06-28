@@ -69,7 +69,7 @@
   /**
    * Helper: Click the actual "Not interested" button in the UI
    */
-  async function clickNotInterestedUI(videoElement, pageType) {
+  async function clickNotInterestedUI(videoElement, pageType, debugLog) {
     const isVisible = (element) => Boolean(
       element && element.isConnected && element.getClientRects().length > 0
     );
@@ -185,7 +185,7 @@
           foundAny = true;
           const text = item.innerText || item.textContent || "";
           if (text.replace(/\s/g, '').match(/관심없음|Notinterested|興味なし|不感兴趣/i)) {
-            console.log('[youtube_skip] Found UI button, clicking...');
+            debugLog('Found UI button, clicking...');
             const clickTarget = item.querySelector('button, [role="button"]') || item;
             clickTarget.click();
             clearInterval(interval);
@@ -203,7 +203,7 @@
           clearInterval(interval);
           if (foundAny) {
               const availableItems = Array.from(items).map(i => i.innerText || i.textContent || "unknown").filter(t => t.trim() !== "");
-              console.log('[youtube_skip] UI Items found but none matched "Not interested":', availableItems);
+              debugLog('UI Items found but none matched "Not interested":', availableItems);
           }
           document.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Escape',
@@ -218,7 +218,10 @@
   }
 
   window.addEventListener('youtube-skip-action', async function(e) {
-    const { videoId, pageType = 'home' } = e.detail;
+    const { videoId, pageType = 'home', loggingEnabled = false } = e.detail;
+    const debugLog = (...args) => {
+      if (loggingEnabled) console.log('[youtube_skip]', ...args);
+    };
 
     const currentPageType = window.location.pathname === '/watch'
       ? 'watch'
@@ -237,7 +240,7 @@
     }
 
     if (!videoElement) {
-      console.error('[youtube_skip] Video element not found for action:', videoId);
+      debugLog('Video element not found for action:', videoId);
       sendResponse(false, 'missing_element');
       return;
     }
@@ -264,7 +267,7 @@
       if (command && (ytdApp?.resolveCommand || ytdApp?.resolve)) {
         const resolver = (ytdApp.resolveCommand || ytdApp.resolve).bind(ytdApp);
         resolver(command);
-        console.log('[youtube_skip] v1/feedback triggered via API for:', videoId);
+        debugLog('v1/feedback triggered via API for:', videoId);
         if (pageType === 'watch') {
           setTimeout(() => sendResponse(true, 'api'), 200);
         } else {
@@ -273,15 +276,15 @@
         return;
       }
 
-      console.log('[youtube_skip] API discovery failed, attempting UI simulation for:', videoId);
-      const success = await clickNotInterestedUI(videoElement, pageType);
+      debugLog('API discovery failed, attempting UI simulation for:', videoId);
+      const success = await clickNotInterestedUI(videoElement, pageType, debugLog);
       if (success) {
-        console.log('[youtube_skip] v1/feedback triggered via UI Click for:', videoId);
+        debugLog('v1/feedback triggered via UI Click for:', videoId);
         sendResponse(true, 'ui');
       } else {
-        console.error('[youtube_skip] All methods failed for:', videoId);
+        debugLog('All methods failed for:', videoId);
         if (data) {
-            console.log('[youtube_skip] Failed data object:', data);
+            debugLog('Failed data object:', data);
         }
         sendResponse(false, 'failed');
       }

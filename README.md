@@ -1,6 +1,6 @@
 # YouTube Feed Filter (유튜브 피드 필터)
 
-Current extension version: **1.6.3**
+Current extension version: **1.6.4**
 
 Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date and replace the recommendation card with a visible reason.
 업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리하고, 해당 추천 카드에 처리 사유를 표시합니다.
@@ -15,6 +15,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 | <subSmall>**로그인 상태 안내**</subSmall> | <subSmall>YouTube 미로그인 상태에서는 자동 관심없음 필터링을 중단하고 로그인 필요 안내를 표시</subSmall> |
 | <subSmall>**Watch 처리 안정화**</subSmall> | <subSmall>추천 목록 갱신 시 최신 카드 DOM을 다시 탐색하고, 페이지 전환 중인 이전 요청과 YouTube DOM 후처리 충돌을 방지</subSmall> |
 | <subSmall>**성공 결과만 반영**</subSmall> | <subSmall>실제 `feedback` 처리가 성공한 영상만 Skipped 통계와 관심없음 플레이스홀더에 반영</subSmall> |
+| <subSmall>**콘솔 오류 노이즈 감소**</subSmall> | <subSmall>YouTube DOM에서 관심없음 액션을 찾지 못한 예상 실패는 Debug Logging이 켜진 경우에만 출력</subSmall> |
 | <subSmall>**Lazy-load 카드 교체 대응**</subSmall> | <subSmall>홈 최하단에서 피드가 추가될 때 YouTube가 `동영상 숨김` 결과 카드를 정리해도 독립 슬롯으로 관심없음 플레이스홀더를 유지</subSmall> |
 | <subSmall>**확장 아이콘 통계 배지**</subSmall> | <subSmall>확장 아이콘 배지에 Skipped 값만 표시</subSmall> |
 | <subSmall>**간결한 팝업 UI**</subSmall> | <subSmall>Detected/Skipped 통계를 필터 설정 위로 이동하고 팝업을 세로 스크롤 없이 사용할 수 있도록 압축</subSmall> |
@@ -49,7 +50,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 - **YouTube Dark Theme Popup UI**: Manage settings from a token-based popup designed around YouTube dark surfaces, borders, text colors, and brand red accents.
 - **Sequential Processing**: Processes feedback actions one at a time to avoid menu collisions and duplicate requests.
 - **Locale Support**: Fully supports both English and Korean YouTube interfaces.
-- **Debug Logging**: Toggle console logs on/off via the popup UI for troubleshooting.
+- **Debug Logging**: Toggle expected feedback diagnostics on/off via the popup UI for troubleshooting.
 
 ### 🛠 Installation
 1. Download or clone this repository.
@@ -110,7 +111,7 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 - **유튜브 다크 테마 팝업 UI**: 유튜브 다크 테마의 배경, 표면, 테두리, 텍스트 색상, 브랜드 레드 포인트를 디자인 토큰으로 정의해 적용했습니다.
 - **순차 처리**: 메뉴 충돌과 중복 요청을 막기 위해 feedback 작업을 한 번에 하나씩 처리합니다.
 - **다국어 지원**: 유튜브의 영어 및 한국어 인터페이스를 완벽하게 지원합니다.
-- **로그 제어**: 팝업 UI에서 개발자 도구 콘솔 로그 출력 여부를 간편하게 설정할 수 있습니다.
+- **로그 제어**: 팝업 UI에서 예상 가능한 feedback 진단 로그 출력 여부를 간편하게 설정할 수 있습니다.
 
 ### 🛠 설치 방법
 1. 이 저장소를 다운로드하거나 클론(Clone)합니다.

@@ -305,6 +305,7 @@
             const result = await performAction(element);
             success = result.success;
             actionMethod = result.method;
+            if (!success && actionMethod === 'missing_not_interested') break;
             if (!success) await new Promise((resolve) => setTimeout(resolve, 500));
           }
 

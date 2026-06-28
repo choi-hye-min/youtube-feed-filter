@@ -1,6 +1,6 @@
 # YouTube Feed Filter (유튜브 피드 필터)
 
-Current extension version: **1.6.4**
+Current extension version: **1.6.5**
 
 Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date and replace the recommendation card with a visible reason.
 업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리하고, 해당 추천 카드에 처리 사유를 표시합니다.
@@ -8,6 +8,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 ### 🛠 최신 개선 사항 (Recent Improvements)
 | 개선 기능 | 상세 내용 |
 | :--- | :--- |
+| <subSmall>**홈 메뉴 반복 방지**</subSmall> | <subSmall>홈 피드의 `추가 작업` 메뉴에 "관심없음" 항목이 없는 경우 즉시 닫고 같은 카드 재시도를 중단</subSmall> |
 | <subSmall>**최신 유튜브 UI 대응**</subSmall> | <subSmall>`yt-lockup-view-model` 등 최신 데이터 구조와 홈 피드의 `추가 작업` 메뉴에서 "관심없음" 명령을 추적하도록 개선</subSmall> |
 | <subSmall>**네트워크 안정성 확보**</subSmall> | <subSmall>API 호출 및 클릭 시뮬레이션 완료 후 UI를 교체하여 `v1/feedback` 요청 누락 방지</subSmall> |
 | <subSmall>**페이지별 독립 처리**</subSmall> | <subSmall>홈(`/`)과 시청(`/watch`) 추천 영역의 DOM 탐색 및 변경 코드를 분리해 서로의 수정에 영향을 받지 않도록 구성</subSmall> |

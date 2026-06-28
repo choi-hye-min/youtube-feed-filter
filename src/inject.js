@@ -131,7 +131,7 @@
       }
     }
 
-    if (!menuButton || !videoElement.isConnected) return false;
+    if (!menuButton || !videoElement.isConnected) return { success: false, reason: 'missing_menu' };
 
     // YouTube keeps closed popup items in the DOM. Dismiss any previous popup
     // so the search below cannot select a stale hidden "Not interested" item.
@@ -193,10 +193,22 @@
             // reconciliation before the next queued card is processed.
             setTimeout(() => {
               stopSuppressingScroll();
-              resolve(true);
+              resolve({ success: true, reason: 'ui' });
             }, pageType === 'watch' ? 200 : 700);
             return;
           }
+        }
+
+        if (pageType === 'home' && foundAny && attempts >= 5) {
+          clearInterval(interval);
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape',
+            code: 'Escape',
+            bubbles: true
+          }));
+          stopSuppressingScroll();
+          resolve({ success: false, reason: 'missing_not_interested' });
+          return;
         }
 
         if (attempts > 40) { 
@@ -211,7 +223,7 @@
             bubbles: true
           }));
           stopSuppressingScroll();
-          resolve(false);
+          resolve({ success: false, reason: foundAny ? 'missing_not_interested' : 'menu_timeout' });
         }
       }, 100);
     });
@@ -277,8 +289,8 @@
       }
 
       debugLog('API discovery failed, attempting UI simulation for:', videoId);
-      const success = await clickNotInterestedUI(videoElement, pageType, debugLog);
-      if (success) {
+      const uiResult = await clickNotInterestedUI(videoElement, pageType, debugLog);
+      if (uiResult.success) {
         debugLog('v1/feedback triggered via UI Click for:', videoId);
         sendResponse(true, 'ui');
       } else {
@@ -286,7 +298,7 @@
         if (data) {
             debugLog('Failed data object:', data);
         }
-        sendResponse(false, 'failed');
+        sendResponse(false, uiResult.reason || 'failed');
       }
     } catch (err) {
       console.error('[youtube_skip] Injection error:', err);

@@ -133,18 +133,13 @@
 
     if (!menuButton || !videoElement.isConnected) return { success: false, reason: 'missing_menu' };
 
-    // YouTube keeps closed popup items in the DOM. Dismiss any previous popup
-    // so the search below cannot select a stale hidden "Not interested" item.
+    // Avoid fighting with a menu the user or YouTube already has open.
+    // The queue will retry this card later instead of toggling that popup.
     const openPopup = Array.from(document.querySelectorAll(
       'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
     )).find(isVisible);
     if (openPopup) {
-      document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Escape',
-        code: 'Escape',
-        bubbles: true
-      }));
-      await new Promise(resolve => setTimeout(resolve, 100));
+      return { success: false, reason: 'menu_busy' };
     }
 
     const suppressMenuFocusScrolling = () => {

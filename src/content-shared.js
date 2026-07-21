@@ -174,6 +174,19 @@
       element.replaceChildren(placeholder);
     }
 
+    function isProcessableElement(element) {
+      return Boolean(
+        element &&
+        element.isConnected &&
+        !element.hidden &&
+        element.getClientRects().length > 0 &&
+        element.offsetWidth > 0 &&
+        element.offsetHeight > 0 &&
+        !element.closest('.ytDismissibleItemReplacedContent') &&
+        !element.querySelector('.ytDismissibleItemReplacedContent')
+      );
+    }
+
     function reset() {
       processedVideos.clear();
       for (const record of placeholderSlots) {
@@ -293,7 +306,7 @@
 
           for (let attempt = 0; attempt < 3 && !success; attempt++) {
             element = findCurrentElement(item.videoId) || element;
-            if (!element?.isConnected) {
+            if (!isProcessableElement(element)) {
               await new Promise((resolve) => setTimeout(resolve, 500));
               continue;
             }
@@ -384,6 +397,7 @@
       for (const candidate of adapter.findCandidates(document)) {
         const element = adapter.normalizeCandidate(candidate);
         if (!element || !adapter.isEligible(element)) continue;
+        if (!isProcessableElement(element)) continue;
         const videoId = getVideoId(element);
         const previousId = element.getAttribute(attribute('video-id'));
         if (videoId && previousId && videoId !== previousId) {

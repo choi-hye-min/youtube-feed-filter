@@ -141,6 +141,18 @@
       if (filterState.loggingEnabled) console.log(`[youtube_skip:${adapter.key}]`, ...args);
     };
 
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function waitForReplacementElement(slot, fallbackElement) {
+      const deadline = Date.now() + 1200;
+      while (!stopped && Date.now() < deadline) {
+        const replacement = adapter.findReplacementElement?.(slot);
+        if (replacement) return replacement;
+        await wait(100);
+      }
+      return adapter.findReplacementElement?.(slot) || (fallbackElement?.isConnected ? fallbackElement : null);
+    }
+
     function renderPlaceholder(element, videoInfo) {
       if (element.getAttribute(attribute('placeholder')) === 'true') return;
       const placeholder = document.createElement('div');
@@ -327,8 +339,7 @@
             stats.skipped++;
             updateBadge();
             if (adapter.key === 'home' && placeholderSlot?.isConnected) {
-              const dismissedElement = adapter.findReplacementElement?.(placeholderSlot)
-                || (element.isConnected ? element : null);
+              const dismissedElement = await waitForReplacementElement(placeholderSlot, element);
               if (dismissedElement) {
                 dismissedElement.hidden = true;
                 hiddenElements.add(dismissedElement);

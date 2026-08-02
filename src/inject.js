@@ -275,11 +275,7 @@
         const resolver = (ytdApp.resolveCommand || ytdApp.resolve).bind(ytdApp);
         resolver(command);
         debugLog('v1/feedback triggered via API for:', videoId);
-        if (pageType === 'watch') {
-          setTimeout(() => sendResponse(true, 'api'), 200);
-        } else {
-          sendResponse(true, 'api');
-        }
+        setTimeout(() => sendResponse(true, 'api'), pageType === 'watch' ? 200 : 700);
         return;
       }
 

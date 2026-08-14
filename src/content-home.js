@@ -28,13 +28,9 @@
       '#video-title-link',
       '.yt-lockup-metadata-view-model-wiz__title',
       '.ytLockupMetadataViewModelTitle',
-      'a[title]'
+      'a[title]',
+      'a[href*="/watch?v="][aria-label]'
     ]),
-    findReplacementElement(slot) {
-      const replacement = slot?.nextElementSibling;
-      if (!replacement?.matches('ytd-rich-item-renderer')) return null;
-      return replacement.querySelector('.ytDismissibleItemReplacedContent') ? replacement : null;
-    },
     getObserverRoot: (root) => root.querySelector('ytd-browse[page-subtype="home"]') || root.querySelector('ytd-app'),
     shouldReapply: (mutations) => mutations.some((mutation) => Array.from(mutation.addedNodes).some((node) =>
       node.nodeType === 1 && (node.matches?.(candidateSelector) || node.querySelector?.(candidateSelector))

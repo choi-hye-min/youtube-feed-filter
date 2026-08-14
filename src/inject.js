@@ -66,10 +66,47 @@
     return null;
   }
 
+  function suppressActionScrolling(videoElement, shouldRestorePosition) {
+    const originalFocus = HTMLElement.prototype.focus;
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const originalScrollTo = window.scrollTo;
+    const originalScrollBy = window.scrollBy;
+    const savedX = window.scrollX;
+    const savedY = window.scrollY;
+
+    HTMLElement.prototype.focus = function(options) {
+      return originalFocus.call(this, { ...(options || {}), preventScroll: true });
+    };
+    Element.prototype.scrollIntoView = function(options) {
+      const isTargetCard = this === videoElement || videoElement.contains(this);
+      const isMenuPopup = this.closest?.(
+        'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
+      );
+      if (isTargetCard || isMenuPopup) return;
+      return originalScrollIntoView.call(this, options);
+    };
+    window.scrollTo = function(...args) {
+      if (shouldRestorePosition) return;
+      return originalScrollTo.apply(this, args);
+    };
+    window.scrollBy = function(...args) {
+      if (shouldRestorePosition) return;
+      return originalScrollBy.apply(this, args);
+    };
+
+    return () => {
+      HTMLElement.prototype.focus = originalFocus;
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+      window.scrollTo = originalScrollTo;
+      window.scrollBy = originalScrollBy;
+      if (shouldRestorePosition) originalScrollTo.call(window, savedX, savedY);
+    };
+  }
+
   /**
    * Helper: Click the actual "Not interested" button in the UI
    */
-  async function clickNotInterestedUI(videoElement, pageType, debugLog) {
+  async function clickNotInterestedUI(videoElement, pageType, debugLog, restoreActionScrolling) {
     const isVisible = (element) => Boolean(
       element && element.isConnected && element.getClientRects().length > 0
     );
@@ -131,7 +168,10 @@
       }
     }
 
-    if (!menuButton || !videoElement.isConnected) return { success: false, reason: 'missing_menu' };
+    if (!menuButton || !videoElement.isConnected) {
+      restoreActionScrolling();
+      return { success: false, reason: 'missing_menu' };
+    }
 
     // Avoid fighting with a menu the user or YouTube already has open.
     // The queue will retry this card later instead of toggling that popup.
@@ -139,32 +179,10 @@
       'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
     )).find(isVisible);
     if (openPopup) {
+      restoreActionScrolling();
       return { success: false, reason: 'menu_busy' };
     }
 
-    const suppressMenuFocusScrolling = () => {
-      const originalFocus = HTMLElement.prototype.focus;
-      const originalScrollIntoView = Element.prototype.scrollIntoView;
-
-      HTMLElement.prototype.focus = function(options) {
-        return originalFocus.call(this, { ...(options || {}), preventScroll: true });
-      };
-      Element.prototype.scrollIntoView = function(options) {
-        const isTargetCard = this === videoElement || videoElement.contains(this);
-        const isMenuPopup = this.closest?.(
-          'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
-        );
-        if (isTargetCard || isMenuPopup) return;
-        return originalScrollIntoView.call(this, options);
-      };
-
-      return () => {
-        HTMLElement.prototype.focus = originalFocus;
-        Element.prototype.scrollIntoView = originalScrollIntoView;
-      };
-    };
-
-    const stopSuppressingScroll = suppressMenuFocusScrolling();
     menuButton.click();
     
     return new Promise((resolve) => {
@@ -187,7 +205,7 @@
             // Let YouTube complete the feedback request and recommendation-list
             // reconciliation before the next queued card is processed.
             setTimeout(() => {
-              stopSuppressingScroll();
+              restoreActionScrolling();
               resolve({ success: true, reason: 'ui' });
             }, pageType === 'watch' ? 200 : 700);
             return;
@@ -201,7 +219,7 @@
             code: 'Escape',
             bubbles: true
           }));
-          stopSuppressingScroll();
+          restoreActionScrolling();
           resolve({ success: false, reason: 'missing_not_interested' });
           return;
         }
@@ -217,7 +235,7 @@
             code: 'Escape',
             bubbles: true
           }));
-          stopSuppressingScroll();
+          restoreActionScrolling();
           resolve({ success: false, reason: foundAny ? 'missing_not_interested' : 'menu_timeout' });
         }
       }, 100);
@@ -252,6 +270,8 @@
       return;
     }
 
+    let restoreActionScrolling = null;
+
     try {
       let data = videoElement.data || (videoElement.__data && videoElement.__data.data) || videoElement.__data;
       
@@ -271,16 +291,21 @@
       const command = data ? findNotInterestedEndpoint(data) : null;
       const ytdApp = document.querySelector('ytd-app');
 
+      restoreActionScrolling = suppressActionScrolling(videoElement, pageType === 'home');
+
       if (command && (ytdApp?.resolveCommand || ytdApp?.resolve)) {
         const resolver = (ytdApp.resolveCommand || ytdApp.resolve).bind(ytdApp);
         resolver(command);
         debugLog('v1/feedback triggered via API for:', videoId);
-        setTimeout(() => sendResponse(true, 'api'), pageType === 'watch' ? 200 : 700);
+        setTimeout(() => {
+          restoreActionScrolling();
+          sendResponse(true, 'api');
+        }, pageType === 'watch' ? 200 : 700);
         return;
       }
 
       debugLog('API discovery failed, attempting UI simulation for:', videoId);
-      const uiResult = await clickNotInterestedUI(videoElement, pageType, debugLog);
+      const uiResult = await clickNotInterestedUI(videoElement, pageType, debugLog, restoreActionScrolling);
       if (uiResult.success) {
         debugLog('v1/feedback triggered via UI Click for:', videoId);
         sendResponse(true, 'ui');
@@ -292,6 +317,7 @@
         sendResponse(false, uiResult.reason || 'failed');
       }
     } catch (err) {
+      restoreActionScrolling?.();
       console.error('[youtube_skip] Injection error:', err);
       sendResponse(false, 'error');
     }

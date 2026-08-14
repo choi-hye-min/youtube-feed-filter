@@ -12,13 +12,6 @@
     '6months': 180 * 24 * 60 * 60 * 1000
   };
 
-  const THRESHOLD_LABELS = {
-    '1day': '1 Day', '2days': '2 Days', '3days': '3 Days',
-    '4days': '4 Days', '5days': '5 Days', '1week': '1 Week',
-    '2weeks': '2 Weeks', '1month': '1 Month', '3months': '3 Months',
-    '6months': '6 Months'
-  };
-
   const stats = { detected: 0, skipped: 0 };
 
   function updateBadge() {
@@ -38,6 +31,14 @@
       '분': 'minute', '시간': 'hour', '일': 'day', '주': 'week',
       '달': 'month', '월': 'month', '개월': 'month', '년': 'year'
     };
+    const unitLabelMap = {
+      minute: '분',
+      hour: '시간',
+      day: '일',
+      week: '주',
+      month: '개월',
+      year: '년'
+    };
     const unitToMs = {
       minute: 60 * 1000,
       hour: 60 * 60 * 1000,
@@ -46,8 +47,13 @@
       month: 30 * 24 * 60 * 60 * 1000,
       year: 365 * 24 * 60 * 60 * 1000
     };
+    const value = Number.parseInt(match[1], 10);
     const unit = unitMap[match[2].toLowerCase()] || match[2].toLowerCase();
-    return { ms: Number.parseInt(match[1], 10) * unitToMs[unit], text: match[0] };
+    return {
+      ms: value * unitToMs[unit],
+      text: match[0],
+      displayText: `${value}${unitLabelMap[unit] || match[2]}전`
+    };
   }
 
   function findAgeInElement(element, selectors = []) {
@@ -73,7 +79,7 @@
   function firstText(element, selectors) {
     for (const selector of selectors) {
       const node = element.querySelector(selector);
-      const text = node?.getAttribute('title') || node?.textContent;
+      const text = node?.getAttribute('title') || node?.getAttribute('aria-label') || node?.textContent;
       if (text?.trim()) return text.trim();
     }
     return '알 수 없는 제목';
@@ -84,23 +90,11 @@
     const style = document.createElement('style');
     style.id = 'youtube-skip-styles';
     style.textContent = `
-      .youtube-skip-placeholder { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; width:100%; min-height:96px; border-radius:12px; overflow:hidden; background:rgba(15,15,15,.06); color:var(--yt-spec-text-secondary,#606060); font:500 14px Roboto,Arial,sans-serif; box-sizing:border-box; text-align:center; }
-      .youtube-skip-placeholder-slot { position:relative; }
-      .youtube-skip-placeholder-slot > .youtube-skip-placeholder { position:absolute; inset:0; height:100%; min-height:0; }
-      .youtube-skip-placeholder::after { content:''; position:absolute; inset:-50%; pointer-events:none; background:linear-gradient(115deg, transparent 40%, rgba(255,255,255,.5) 50%, transparent 60%); transform:translateX(-70%); animation:youtube-skip-glass-flash 600ms ease-out both; }
-      .youtube-skip-placeholder-title { color:var(--yt-spec-text-primary,#0f0f0f); font-size:15px; font-weight:600; }
-      .youtube-skip-placeholder-video-title { max-width:90%; color:var(--yt-spec-text-primary,#0f0f0f); font-size:13px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-      .youtube-skip-placeholder-reason { max-width:92%; font-size:12px; font-weight:400; line-height:1.35; overflow-wrap:anywhere; }
-      .youtube-skip-placeholder--watch { min-height:94px; border-radius:8px; overflow-anchor:none; }
       .youtube-skip-signin-notice { position:fixed; left:16px; bottom:16px; z-index:2147483647; max-width:min(360px, calc(100vw - 32px)); padding:12px 14px; border-radius:8px; background:var(--yt-spec-raised-background,#fff); border:1px solid rgba(0,0,0,.14); box-shadow:0 6px 18px rgba(0,0,0,.18); color:var(--yt-spec-text-primary,#0f0f0f); font:500 13px/1.4 Roboto,Arial,sans-serif; }
       .youtube-skip-signin-notice-title { margin-bottom:3px; font-size:14px; font-weight:700; }
       .youtube-skip-signin-notice-body { color:var(--yt-spec-text-secondary,#606060); font-weight:400; }
-      html[dark] .youtube-skip-placeholder, [dark] .youtube-skip-placeholder { background:rgba(255,255,255,.08); color:var(--yt-spec-text-secondary,#aaa); }
-      html[dark] .youtube-skip-placeholder-title, [dark] .youtube-skip-placeholder-title, html[dark] .youtube-skip-placeholder-video-title, [dark] .youtube-skip-placeholder-video-title { color:var(--yt-spec-text-primary,#f1f1f1); }
       html[dark] .youtube-skip-signin-notice, [dark] .youtube-skip-signin-notice { background:var(--yt-spec-raised-background,#212121); border-color:rgba(255,255,255,.18); color:var(--yt-spec-text-primary,#f1f1f1); }
       html[dark] .youtube-skip-signin-notice-body, [dark] .youtube-skip-signin-notice-body { color:var(--yt-spec-text-secondary,#aaa); }
-      @keyframes youtube-skip-glass-flash { from { transform:translateX(-70%); } to { transform:translateX(70%); } }
-      @media (prefers-reduced-motion: reduce) { .youtube-skip-placeholder::after { animation:none; display:none; } }
     `;
     (document.head || document.documentElement).appendChild(style);
   }
@@ -125,10 +119,7 @@
   }
 
   function createRuntime(adapter, filterState) {
-    const processedVideos = new Map();
-    const originalChildren = new WeakMap();
-    const hiddenElements = new Set();
-    const placeholderSlots = new Set();
+    const processedVideos = new Set();
     const queue = [];
     let processing = false;
     let observer = null;
@@ -143,47 +134,72 @@
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    async function waitForReplacementElement(slot, fallbackElement) {
-      const deadline = Date.now() + 1200;
-      while (!stopped && Date.now() < deadline) {
-        const replacement = adapter.findReplacementElement?.(slot);
-        if (replacement) return replacement;
-        await wait(100);
-      }
-      return adapter.findReplacementElement?.(slot) || (fallbackElement?.isConnected ? fallbackElement : null);
+    function captureElementContext(element) {
+      const parent = element.parentElement;
+      if (!parent) return null;
+      const children = Array.from(parent.children);
+      return {
+        parent,
+        previousSibling: element.previousElementSibling,
+        nextSibling: element.nextElementSibling,
+        index: children.indexOf(element)
+      };
     }
 
-    function renderPlaceholder(element, videoInfo) {
-      if (element.getAttribute(attribute('placeholder')) === 'true') return;
-      const placeholder = document.createElement('div');
-      placeholder.className = `youtube-skip-placeholder youtube-skip-placeholder--${adapter.key}`;
-      placeholder.setAttribute('role', 'status');
-      placeholder.setAttribute('aria-label', '관심없음 처리됨');
-      placeholder.innerHTML = '<div class="youtube-skip-placeholder-title">관심없음</div>';
-
-      const title = document.createElement('div');
-      title.className = 'youtube-skip-placeholder-video-title';
-      title.textContent = videoInfo?.title || '알 수 없는 제목';
-      placeholder.appendChild(title);
-
-      const reason = document.createElement('div');
-      reason.className = 'youtube-skip-placeholder-reason';
-      reason.textContent = `업로드: ${videoInfo?.ageText || '기준 초과'} / 기준: ${THRESHOLD_LABELS[filterState.threshold] || filterState.threshold} 이상`;
-      placeholder.appendChild(reason);
-
-      const height = element.offsetHeight;
-      if (height > 0) {
-        if (adapter.key === 'watch') {
-          placeholder.style.height = `${height}px`;
-          placeholder.style.minHeight = `${height}px`;
-          placeholder.style.overflow = 'hidden';
-        } else {
-          placeholder.style.minHeight = `${Math.max(height, 94)}px`;
-        }
+    function getContextCandidates(element, context) {
+      const candidates = [];
+      if (element?.isConnected) candidates.push(element);
+      if (context?.previousSibling?.nextElementSibling) candidates.push(context.previousSibling.nextElementSibling);
+      if (context?.nextSibling?.previousElementSibling) candidates.push(context.nextSibling.previousElementSibling);
+      if (context?.parent?.isConnected) {
+        candidates.push(context.parent.children[context.index]);
+        candidates.push(context.parent);
       }
-      element.setAttribute(attribute('placeholder'), 'true');
-      originalChildren.set(element, Array.from(element.childNodes));
-      element.replaceChildren(placeholder);
+      return candidates.filter(Boolean);
+    }
+
+    function findHiddenResult(element, context) {
+      for (const candidate of getContextCandidates(element, context)) {
+        const result = candidate.matches?.('.ytDismissibleItemReplacedContent')
+          ? candidate
+          : candidate.querySelector?.('.ytDismissibleItemReplacedContent');
+        if (result) return result;
+      }
+      return null;
+    }
+
+    async function waitForHiddenResult(element, context) {
+      const deadline = Date.now() + 1600;
+      while (!stopped && Date.now() < deadline) {
+        const result = findHiddenResult(element, context);
+        if (result) return result;
+        await wait(100);
+      }
+      return findHiddenResult(element, context);
+    }
+
+    function setHiddenResultReason(result, videoInfo) {
+      if (!result) return;
+      const uploadAge = videoInfo.ageText || '기준 초과';
+      const title = videoInfo.title || '알 수 없는 제목';
+      const ariaLabel = `[${uploadAge} 업로드] ${title}`;
+      const textNodes = Array.from(result.querySelectorAll('yt-formatted-string, h1, h2, h3, span'))
+        .filter((node) =>
+          !node.closest('button, tp-yt-paper-button, a') &&
+          /동영상 숨김|Video hidden/i.test(node.textContent?.trim() || '')
+        );
+      const target = textNodes[0];
+      if (target) {
+        const lineBreak = document.createElement('br');
+        target.replaceChildren(
+          document.createTextNode(`[${uploadAge} 업로드]`),
+          lineBreak,
+          document.createTextNode(title)
+        );
+        target.setAttribute('aria-label', ariaLabel);
+      } else {
+        result.setAttribute('aria-label', ariaLabel);
+      }
     }
 
     function isProcessableElement(element) {
@@ -201,83 +217,14 @@
 
     function reset() {
       processedVideos.clear();
-      for (const record of placeholderSlots) {
-        record.slot.remove();
-      }
-      placeholderSlots.clear();
-      for (const slot of document.querySelectorAll(`[${attribute('slot')}]`)) {
-        slot.remove();
-      }
-      for (const element of hiddenElements) {
-        if (element.isConnected) element.hidden = false;
-      }
-      hiddenElements.clear();
       const runtimeSelector = [
         `[${attribute('processed')}]`,
-        `[${attribute('placeholder')}]`,
         `[${attribute('video-id')}]`
       ].join(', ');
       for (const element of document.querySelectorAll(runtimeSelector)) {
-        const children = originalChildren.get(element);
-        if (children) element.replaceChildren(...children);
         element.removeAttribute(attribute('processed'));
-        element.removeAttribute(attribute('placeholder'));
         element.removeAttribute(attribute('video-id'));
         element.removeAttribute('data-youtube-skip-id');
-      }
-    }
-
-    function reservePlaceholderSlot(element) {
-      if (!element.parentNode) return null;
-      const slot = document.createElement(adapter.key === 'home' ? element.tagName.toLowerCase() : 'div');
-      const height = element.offsetHeight;
-      if (adapter.key === 'home') {
-        slot.className = `${element.className} youtube-skip-placeholder-slot`.trim();
-        slot.setAttribute(attribute('slot'), 'true');
-      } else {
-        slot.style.width = '100%';
-      }
-      if (height > 0) slot.style.height = `${height}px`;
-      slot.hidden = true;
-      element.parentNode.insertBefore(slot, element);
-      return slot;
-    }
-
-    function rememberPlaceholderSlot(slot, dismissedElement, videoInfo) {
-      const parent = slot.parentElement;
-      if (!parent) return;
-      const children = Array.from(parent.children);
-      const index = children.indexOf(slot);
-      const previousSibling = children.slice(0, index).reverse().find((child) =>
-        child !== dismissedElement && !child.hasAttribute(attribute('slot'))
-      ) || null;
-      const nextSibling = children.slice(index + 1).find((child) =>
-        child !== dismissedElement && !child.hasAttribute(attribute('slot'))
-      ) || null;
-      placeholderSlots.add({ slot, parent, previousSibling, nextSibling, index, videoInfo });
-    }
-
-    function restorePlaceholderSlots() {
-      for (const record of placeholderSlots) {
-        if (!record.slot.isConnected) {
-          if (!record.parent.isConnected) continue;
-          if (record.previousSibling?.parentElement === record.parent) {
-            record.parent.insertBefore(record.slot, record.previousSibling.nextElementSibling);
-          } else if (record.nextSibling?.parentElement === record.parent) {
-            record.parent.insertBefore(record.slot, record.nextSibling);
-          } else {
-            record.parent.insertBefore(record.slot, record.parent.children[record.index] || null);
-          }
-        }
-        if (!record.slot.querySelector('.youtube-skip-placeholder')) {
-          record.slot.removeAttribute(attribute('placeholder'));
-          renderPlaceholder(record.slot, record.videoInfo);
-        }
-        const replacement = adapter.findReplacementElement?.(record.slot);
-        if (replacement && !replacement.hidden) {
-          replacement.hidden = true;
-          hiddenElements.add(replacement);
-        }
       }
     }
 
@@ -311,10 +258,10 @@
       while (queue.length && !stopped) {
         const item = queue.shift();
         let actionMethod = null;
-        let placeholderSlot = null;
         try {
           let success = false;
           let element = item.element;
+          let context = captureElementContext(element);
 
           for (let attempt = 0; attempt < 3 && !success; attempt++) {
             element = findCurrentElement(item.videoId) || element;
@@ -324,9 +271,7 @@
             }
 
             element.setAttribute(attribute('processed'), 'queued');
-            if (!placeholderSlot?.isConnected) {
-              placeholderSlot = reservePlaceholderSlot(element);
-            }
+            context = captureElementContext(element);
             const result = await performAction(element);
             success = result.success;
             actionMethod = result.method;
@@ -335,33 +280,14 @@
           }
 
           if (success && !stopped) {
-            if (item.videoId) processedVideos.set(item.videoId, item.videoInfo);
+            if (item.videoId) processedVideos.add(item.videoId);
             stats.skipped++;
             updateBadge();
-            if (adapter.key === 'home' && placeholderSlot?.isConnected) {
-              const dismissedElement = await waitForReplacementElement(placeholderSlot, element);
-              if (dismissedElement) {
-                dismissedElement.hidden = true;
-                hiddenElements.add(dismissedElement);
-              }
-              rememberPlaceholderSlot(placeholderSlot, dismissedElement, item.videoInfo);
-              placeholderSlot.setAttribute(attribute('processed'), 'done');
-              if (item.videoId) placeholderSlot.setAttribute(attribute('video-id'), item.videoId);
-              placeholderSlot.hidden = false;
-              renderPlaceholder(placeholderSlot, item.videoInfo);
-            } else {
-              if (!element.isConnected) {
-                element = adapter.findReplacementElement?.(placeholderSlot) || element;
-              }
+            const hiddenResult = await waitForHiddenResult(element, context);
+            setHiddenResultReason(hiddenResult, item.videoInfo);
+            if (element.isConnected) {
               element.setAttribute(attribute('processed'), 'done');
               if (item.videoId) element.setAttribute(attribute('video-id'), item.videoId);
-              if (element.isConnected) {
-                placeholderSlot?.remove();
-                renderPlaceholder(element, item.videoInfo);
-              } else if (placeholderSlot?.isConnected) {
-                placeholderSlot.hidden = false;
-                renderPlaceholder(placeholderSlot, item.videoInfo);
-              }
             }
           } else if (!stopped && element?.isConnected) {
             element.setAttribute(attribute('processed'), 'failed');
@@ -369,8 +295,6 @@
           }
         } catch (error) {
           console.error(`[youtube_skip:${adapter.key}] Queue error`, error);
-        } finally {
-          if (placeholderSlot?.hidden) placeholderSlot.remove();
         }
         const actionDelay = adapter.getActionDelay?.(actionMethod) ?? 700;
         if (actionDelay > 0) {
@@ -403,7 +327,6 @@
       if (!filterState.enabled || !adapter.matchesPath(window.location.pathname)) return;
       const thresholdMs = THRESHOLD_PRESETS[filterState.threshold];
       if (!thresholdMs) return;
-      restorePlaceholderSlots();
 
       for (const candidate of adapter.findCandidates(document)) {
         const element = adapter.normalizeCandidate(candidate);
@@ -413,12 +336,11 @@
         const previousId = element.getAttribute(attribute('video-id'));
         if (videoId && previousId && videoId !== previousId) {
           element.removeAttribute(attribute('processed'));
-          element.removeAttribute(attribute('placeholder'));
         }
         if (videoId) element.setAttribute(attribute('video-id'), videoId);
 
         if (videoId && processedVideos.has(videoId)) {
-          renderPlaceholder(element, processedVideos.get(videoId));
+          element.setAttribute(attribute('processed'), 'done');
           continue;
         }
 
@@ -431,7 +353,7 @@
         const age = adapter.extractAge(element);
         if (!age) continue;
         if (age.ms >= thresholdMs) {
-          queueAction(element, { title: adapter.extractTitle(element), ageText: age.text }, videoId);
+          queueAction(element, { ageText: age.displayText || age.text, title: adapter.extractTitle(element) }, videoId);
         } else {
           element.setAttribute(attribute('processed'), 'checked');
         }

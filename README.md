@@ -1,29 +1,25 @@
 # YouTube Feed Filter (유튜브 피드 필터)
 
-Current extension version: **1.6.5**
+Current extension version: **1.7.0**
 
-Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date and replace the recommendation card with a visible reason.
-업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리하고, 해당 추천 카드에 처리 사유를 표시합니다.
+Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date, then update YouTube's hidden-video message with the upload age and title.
+업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리한 뒤, YouTube의 숨김 안내 문구에 업로드 시점과 제목을 표시합니다.
 
 ### 🛠 최신 개선 사항 (Recent Improvements)
 | 개선 기능 | 상세 내용 |
 | :--- | :--- |
 | <subSmall>**홈 메뉴 반복 방지**</subSmall> | <subSmall>홈 피드의 `추가 작업` 메뉴에 "관심없음" 항목이 없는 경우 즉시 닫고 같은 카드 재시도를 중단</subSmall> |
 | <subSmall>**최신 유튜브 UI 대응**</subSmall> | <subSmall>`yt-lockup-view-model` 등 최신 데이터 구조와 홈 피드의 `추가 작업` 메뉴에서 "관심없음" 명령을 추적하도록 개선</subSmall> |
-| <subSmall>**네트워크 안정성 확보**</subSmall> | <subSmall>API 호출 및 클릭 시뮬레이션 완료 후 UI를 교체하여 `v1/feedback` 요청 누락 방지</subSmall> |
+| <subSmall>**네트워크 안정성 확보**</subSmall> | <subSmall>API 호출 및 클릭 시뮬레이션 완료를 확인한 뒤 Skipped 통계 반영</subSmall> |
 | <subSmall>**페이지별 독립 처리**</subSmall> | <subSmall>홈(`/`)과 시청(`/watch`) 추천 영역의 DOM 탐색 및 변경 코드를 분리해 서로의 수정에 영향을 받지 않도록 구성</subSmall> |
 | <subSmall>**페이지별 활성화 설정**</subSmall> | <subSmall>팝업에서 메인 페이지와 `/watch` 추천 필터를 각각 켜거나 끌 수 있도록 개선</subSmall> |
 | <subSmall>**로그인 상태 안내**</subSmall> | <subSmall>YouTube 미로그인 상태에서는 자동 관심없음 필터링을 중단하고 로그인 필요 안내를 표시</subSmall> |
 | <subSmall>**Watch 처리 안정화**</subSmall> | <subSmall>추천 목록 갱신 시 최신 카드 DOM을 다시 탐색하고, 페이지 전환 중인 이전 요청과 YouTube DOM 후처리 충돌을 방지</subSmall> |
-| <subSmall>**성공 결과만 반영**</subSmall> | <subSmall>실제 `feedback` 처리가 성공한 영상만 Skipped 통계와 관심없음 플레이스홀더에 반영</subSmall> |
+| <subSmall>**성공 결과만 반영**</subSmall> | <subSmall>실제 `feedback` 처리가 성공한 영상만 Skipped 통계에 반영</subSmall> |
+| <subSmall>**숨김 사유 표시**</subSmall> | <subSmall>YouTube의 `동영상 숨김` 결과 카드 문구를 `[업로드 시점]`과 영상 제목 형식으로 변경</subSmall> |
 | <subSmall>**콘솔 오류 노이즈 감소**</subSmall> | <subSmall>YouTube DOM에서 관심없음 액션을 찾지 못한 예상 실패는 Debug Logging이 켜진 경우에만 출력</subSmall> |
-| <subSmall>**Lazy-load 카드 교체 대응**</subSmall> | <subSmall>홈 최하단에서 피드가 추가될 때 YouTube가 `동영상 숨김` 결과 카드를 정리해도 독립 슬롯으로 관심없음 플레이스홀더를 유지</subSmall> |
 | <subSmall>**확장 아이콘 통계 배지**</subSmall> | <subSmall>확장 아이콘 배지에 Skipped 값만 표시</subSmall> |
 | <subSmall>**간결한 팝업 UI**</subSmall> | <subSmall>Detected/Skipped 통계를 필터 설정 위로 이동하고 팝업을 세로 스크롤 없이 사용할 수 있도록 압축</subSmall> |
-| <subSmall>**상세 정보 표시**</subSmall> | <subSmall>플레이스홀더에 필터링된 영상의 **제목**을 추가하여 어떤 영상이 처리되었는지 명시</subSmall> |
-| <subSmall>**데이터 보존 및 재사용**</subSmall> | <subSmall>스크롤 시 요소가 재사용되어도 영상 제목이 유실되지 않도록 데이터 관리 최적화</subSmall> |
-| <subSmall>**다크 모드 최적화**</subSmall> | <subSmall>유튜브 다크 테마 환경에서도 제목과 텍스트가 잘 보이도록 색상 및 대비 조정</subSmall> |
-| <subSmall>**플레이스홀더 전환 효과**</subSmall> | <subSmall>추천 카드가 플레이스홀더로 교체될 때 짧은 글래스 플래시 효과를 표시</subSmall> |
 
 ---
 
@@ -42,10 +38,9 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 - **Independent Page Controls**: Enable or disable filtering separately for the YouTube main page and `/watch` recommendations from the extension popup.
 - **Signed-in YouTube Only**: Filtering runs only when the current YouTube page is signed in, with popup and page notices when sign-in is required.
 - **Stable Watch-Page Processing**: Reacquires recommendation cards after YouTube updates the DOM and prevents menu focus from moving the user's scroll position.
-- **Success-based Results**: Only confirmed feedback actions increment the skipped count and replace a recommendation with a placeholder.
-- **Visible Reason Placeholder**: Covers processed home feed cards with an extension-owned "관심없음" placeholder and shows why the video was filtered, including upload age and the active threshold.
-- **Home Feed Refresh Reset**: Clears existing placeholders before YouTube refreshes the home feed through in-page navigation, then evaluates the new recommendations again.
-- **Glass Flash Transition**: Shows a brief glass-like highlight when a recommendation is replaced with a placeholder, while respecting reduced-motion preferences.
+- **Success-based Results**: Only confirmed feedback actions increment the skipped count.
+- **Hidden Reason Message**: Replaces YouTube's hidden-video result text with `[upload age]` and the video title.
+- **Home Feed Refresh Reset**: Re-evaluates refreshed home-feed recommendations after in-page navigation.
 - **Real-time Statistics**: View compact Detected and Skipped counters above the threshold control.
 - **Icon Badge Counts**: Shows only the Skipped count on the extension icon.
 - **YouTube Dark Theme Popup UI**: Manage settings from a token-based popup designed around YouTube dark surfaces, borders, text colors, and brand red accents.
@@ -66,7 +61,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 4. Ensure **"Enable Filtering"** is turned on.
 5. Turn **"Main Page"** and **"Watch Page"** filtering on or off independently.
 6. Optionally enable **"Debug Logging"** to inspect feedback behavior in DevTools.
-7. Confirmed recommendations remain visible as a "관심없음" card with the title, upload age, and active threshold.
+7. Confirm the Skipped counter increases only after recommendations are successfully marked as "Not interested" and the hidden-video message shows `[upload age]` plus the video title.
 
 The global **Enable Filtering** switch overrides both page-specific switches. Turning it off stops the active observer and pending queue for the current page.
 When YouTube is signed out, filtering controls are paused and the extension shows a sign-in notice instead of attempting feedback actions.
@@ -103,10 +98,9 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 - **페이지별 활성화 설정**: 확장 프로그램 팝업에서 메인 페이지와 `/watch` 추천 필터를 각각 켜거나 끌 수 있습니다.
 - **YouTube 로그인 사용자 전용**: 현재 YouTube 페이지가 로그인 상태일 때만 필터링이 실행되며, 미로그인 상태에서는 팝업과 페이지에 안내를 표시합니다.
 - **Watch 페이지 처리 안정화**: 유튜브가 추천 DOM을 갱신하면 최신 카드를 다시 탐색하며, 페이지 전환 중인 이전 요청과 YouTube의 추천 카드 DOM 후처리가 충돌하지 않도록 처리합니다.
-- **성공 결과만 반영**: 실제 feedback 처리가 확인된 영상만 Skipped 통계와 관심없음 플레이스홀더에 반영합니다.
-- **처리 사유 표시**: 처리된 피드 카드를 삭제하지 않고 "관심없음" 영역으로 바꾼 뒤, 업로드 시점과 적용된 기준을 함께 표시합니다.
-- **홈 피드 갱신 초기화**: 유튜브 로고 클릭 등 페이지 내 이동으로 홈 피드가 갱신되기 전에 기존 플레이스홀더를 초기화하고 새 추천 영상을 다시 검사합니다.
-- **글래스 플래시 전환**: 추천 카드가 플레이스홀더로 교체될 때 짧은 광택 효과를 표시하며, 모션 감소 환경설정을 따릅니다.
+- **성공 결과만 반영**: 실제 feedback 처리가 확인된 영상만 Skipped 통계에 반영합니다.
+- **숨김 사유 표시**: YouTube의 `동영상 숨김` 결과 카드 문구를 `[업로드 시점]`과 영상 제목 형식으로 변경합니다.
+- **홈 피드 갱신 재검사**: 유튜브 로고 클릭 등 페이지 내 이동으로 홈 피드가 갱신되면 새 추천 영상을 다시 검사합니다.
 - **실시간 통계**: 시간 기준 설정 위에서 간결한 Detected 및 Skipped 통계를 확인할 수 있습니다.
 - **아이콘 배지 통계**: 확장 프로그램 아이콘에 Skipped 값만 표시합니다.
 - **유튜브 다크 테마 팝업 UI**: 유튜브 다크 테마의 배경, 표면, 테두리, 텍스트 색상, 브랜드 레드 포인트를 디자인 토큰으로 정의해 적용했습니다.
@@ -127,7 +121,7 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 4. **"Enable Filtering"**이 켜져 있는지 확인합니다.
 5. **"Main Page"**와 **"Watch Page"** 토글로 각 페이지의 필터를 독립적으로 설정합니다.
 6. 필요하면 **"Debug Logging"**을 켜서 개발자 도구 콘솔 로그를 확인합니다.
-7. 처리가 확인된 영상 카드가 "관심없음" 영역으로 바뀌고, 제목·업로드 시점·기준 시간이 표시되는 것을 확인합니다.
+7. 추천 영상이 성공적으로 "관심없음" 처리된 뒤에만 Skipped 통계가 증가하고, 숨김 안내 문구에 `[업로드 시점]`과 영상 제목이 표시되는지 확인합니다.
 
 상위 **Enable Filtering**을 끄면 페이지별 설정과 관계없이 현재 페이지의 observer와 대기 중인 처리 큐가 중단됩니다.
 YouTube 미로그인 상태에서는 feedback 작업을 시도하지 않고 로그인 안내를 표시합니다.

@@ -3,6 +3,26 @@
  * Runs in the MAIN world. Robustly triggers "Not interested" action.
  */
 (function() {
+  let activeAction = null;
+  const hiddenResultSelector = '.ytDismissibleItemReplacedContent';
+  const popupSelector = 'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model';
+  const isVisible = (element) => Boolean(
+    element && element.isConnected && element.getClientRects().length > 0
+  );
+
+  function findFeedbackCommand(obj, depth = 0) {
+    if (!obj || typeof obj !== 'object' || depth > 30) return null;
+    if (obj.feedbackEndpoint || obj.feedbackCommand) return obj;
+    if (obj.commandExecutorCommand?.commands?.some((command) => findFeedbackCommand(command, depth + 1))) {
+      return obj;
+    }
+    for (const key of ['serviceEndpoint', 'command', 'onTap', 'innertubeCommand', 'rendererContext', 'commandContext']) {
+      const command = findFeedbackCommand(obj[key], depth + 1);
+      if (command) return command;
+    }
+    return null;
+  }
+
   /**
    * Helper: Recursive search for the feedback endpoint in data
    */
@@ -10,33 +30,17 @@
     if (!obj || depth > 30) return null;
     if (typeof obj !== 'object') return null;
 
-    // Check if this object is a feedback command
-    const isFeedback = obj.feedbackEndpoint || obj.feedbackCommand;
-    const hasMetadata = obj.commandMetadata?.webCommandMetadata?.url?.includes('v1/feedback');
-    
-    // Check by icon type if label matching fails
-    const isNotInterestedIcon = obj.icon?.iconType === 'NOT_INTERESTED' || 
-                               obj.icon?.iconType === 'REMOVE_CIRCLE_OUTLINE' ||
+    // Only an explicit label or the specific icon identifies this feedback action.
+    const isNotInterestedIcon = obj.icon?.iconType === 'NOT_INTERESTED' ||
                                obj.iconType === 'NOT_INTERESTED';
-
-    if (isFeedback || hasMetadata || isNotInterestedIcon) {
-      // Try to verify if this is the "Not interested" one
-      const label = (
-        obj.text?.simpleText || 
-        obj.text?.runs?.[0]?.text || 
-        obj.title?.content || 
-        obj.title || 
-        obj.accessibility?.accessibilityData?.label ||
-        obj.accessibilityText || 
-        ""
-      ).toString();
-
-      const isNotInterestedMatch = label.replace(/\s/g, '').match(/관심없음|Notinterested|興味なし|不感兴趣/i);
-      
-      // If we found a feedback command and it matches "Not interested" OR it's the right icon
-      if (isNotInterestedMatch || isNotInterestedIcon || (depth > 12 && label === "")) {
-        return obj.serviceEndpoint || obj.command || obj.onTap || obj;
-      }
+    const label = (
+      obj.text?.simpleText || obj.text?.runs?.map((run) => run.text).join('') ||
+      obj.title?.content || obj.title || obj.accessibility?.accessibilityData?.label ||
+      obj.accessibilityText || ''
+    ).toString();
+    if (/^(관심없음|Notinterested|興味なし|不感兴趣)$/i.test(label.replace(/\s/g, '')) || isNotInterestedIcon) {
+      const command = findFeedbackCommand(obj);
+      if (command) return command;
     }
 
     // Optimization: avoid searching large irrelevant branches
@@ -94,22 +98,84 @@
       return originalScrollBy.apply(this, args);
     };
 
-    return () => {
+    return (restorePosition = true) => {
       HTMLElement.prototype.focus = originalFocus;
       Element.prototype.scrollIntoView = originalScrollIntoView;
       window.scrollTo = originalScrollTo;
       window.scrollBy = originalScrollBy;
-      if (shouldRestorePosition) originalScrollTo.call(window, savedX, savedY);
+      if (shouldRestorePosition && restorePosition) originalScrollTo.call(window, savedX, savedY);
     };
+  }
+
+  function actionFailure(method) {
+    return Object.assign(new Error(method), { method });
+  }
+
+  function getVideoId(element) {
+    const link = element.querySelector('a[href*="/watch?v="]');
+    return link ? new URL(link.href, window.location.origin).searchParams.get('v') : null;
+  }
+
+  function assertCurrent(action, requireCard = true) {
+    if (action.controller.signal.aborted) throw action.controller.signal.reason;
+    if (window.location.href !== action.pageUrl) throw actionFailure('stale_page');
+    const currentVideoId = getVideoId(action.element);
+    if ((currentVideoId && currentVideoId !== action.targetVideoId) ||
+        (requireCard && (!action.element.isConnected || currentVideoId !== action.targetVideoId))) {
+      throw actionFailure('stale_target');
+    }
+  }
+
+  function wait(ms, action) {
+    const signal = action.controller.signal;
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) return reject(signal.reason);
+      const timeout = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      function onAbort() {
+        clearTimeout(timeout);
+        reject(signal.reason);
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  async function waitForHiddenResult(action) {
+    for (let attempt = 0; attempt <= 16; attempt++) {
+      assertCurrent(action, false);
+      const candidates = action.element.isConnected ? [action.element] : [];
+      if (action.element.isConnected && !isVisible(action.element)) {
+        const previous = action.element.previousElementSibling;
+        const next = action.element.nextElementSibling;
+        if (next && next !== action.nextSibling && next.nextElementSibling === action.nextSibling &&
+            previous === action.previousSibling) candidates.push(next);
+        if (previous && previous !== action.previousSibling && previous.previousElementSibling === action.previousSibling &&
+            next === action.nextSibling) candidates.push(previous);
+      }
+      if (!action.element.isConnected && action.parent?.isConnected) {
+        const replacement = action.parent.children[action.index];
+        if (replacement && replacement.previousElementSibling === action.previousSibling &&
+            replacement.nextElementSibling === action.nextSibling) candidates.push(replacement);
+      }
+      for (const candidate of candidates) {
+        const results = candidate.matches(hiddenResultSelector)
+          ? [candidate] : candidate.querySelectorAll(hiddenResultSelector);
+        for (const result of results) {
+          if (isVisible(result) && !action.existingResults.has(result)) return result;
+        }
+      }
+      if (attempt < 16) await wait(100, action);
+    }
+    throw actionFailure('result_timeout');
   }
 
   /**
    * Helper: Click the actual "Not interested" button in the UI
    */
-  async function clickNotInterestedUI(videoElement, pageType, debugLog, restoreActionScrolling) {
-    const isVisible = (element) => Boolean(
-      element && element.isConnected && element.getClientRects().length > 0
-    );
+  async function clickNotInterestedUI(action, pageType, debugLog) {
+    const videoElement = action.element;
 
     const homeSelectors = [
         '.ytLockupMetadataViewModelMenuButton button[aria-label="추가 작업"]',
@@ -159,9 +225,9 @@
       const allButtons = videoElement.querySelectorAll('button, yt-icon-button');
       for (const btn of allButtons) {
         const label = btn.getAttribute('aria-label') || "";
-        if (btn.innerText?.includes('⋮') || 
+        if (isVisible(btn) && (btn.innerText?.includes('⋮') ||
             btn.innerHTML?.includes('more_vert') || 
-            label.match(/메뉴|menu|Action|더보기/i)) {
+            label.match(/메뉴|menu|Action|더보기/i))) {
           menuButton = btn;
           break;
         }
@@ -169,81 +235,62 @@
     }
 
     if (!menuButton || !videoElement.isConnected) {
-      restoreActionScrolling();
       return { success: false, reason: 'missing_menu' };
     }
 
     // Avoid fighting with a menu the user or YouTube already has open.
     // The queue will retry this card later instead of toggling that popup.
-    const openPopup = Array.from(document.querySelectorAll(
-      'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
-    )).find(isVisible);
+    const openPopup = Array.from(document.querySelectorAll(popupSelector)).find(isVisible);
     if (openPopup) {
-      restoreActionScrolling();
       return { success: false, reason: 'menu_busy' };
     }
 
+    assertCurrent(action);
+    action.openedMenu = true;
     menuButton.click();
-    
-    return new Promise((resolve) => {
-      let attempts = 0;
-      const interval = setInterval(() => {
-        attempts++;
-        
-        const items = document.querySelectorAll('yt-list-item-view-model, ytd-menu-service-item-renderer, tp-yt-paper-item, yt-button-view-model, ytd-menu-navigation-item-renderer');
-        
-        let foundAny = false;
-        for (const item of items) {
-          if (!isVisible(item)) continue;
-          foundAny = true;
-          const text = item.innerText || item.textContent || "";
-          if (text.replace(/\s/g, '').match(/관심없음|Notinterested|興味なし|不感兴趣/i)) {
-            debugLog('Found UI button, clicking...');
-            const clickTarget = item.querySelector('button, [role="button"]') || item;
-            clickTarget.click();
-            clearInterval(interval);
-            // Let YouTube complete the feedback request and recommendation-list
-            // reconciliation before the next queued card is processed.
-            setTimeout(() => {
-              restoreActionScrolling();
-              resolve({ success: true, reason: 'ui' });
-            }, pageType === 'watch' ? 200 : 700);
-            return;
-          }
+    let foundAny = false;
+    for (let attempt = 1; attempt <= 41; attempt++) {
+      await wait(100, action);
+      assertCurrent(action);
+      action.menuPopup ||= Array.from(document.querySelectorAll(popupSelector)).find(isVisible);
+      if (action.menuPopup && !isVisible(action.menuPopup)) return { success: false, reason: 'menu_closed' };
+      const items = action.menuPopup?.querySelectorAll(
+        'yt-list-item-view-model, ytd-menu-service-item-renderer, tp-yt-paper-item, yt-button-view-model, ytd-menu-navigation-item-renderer'
+      ) || [];
+      foundAny = false;
+      for (const item of items) {
+        if (!isVisible(item)) continue;
+        foundAny = true;
+        const text = item.innerText || item.textContent || '';
+        if (/^(관심없음|Notinterested|興味なし|不感兴趣)$/i.test(text.replace(/\s/g, ''))) {
+          assertCurrent(action);
+          debugLog('Found UI button, clicking...');
+          const clickTarget = item.querySelector('button, [role="button"]') || item;
+          clickTarget.click();
+          return { success: true, reason: 'ui' };
         }
-
-        if (pageType === 'home' && foundAny && attempts >= 5) {
-          clearInterval(interval);
-          document.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Escape',
-            code: 'Escape',
-            bubbles: true
-          }));
-          restoreActionScrolling();
-          resolve({ success: false, reason: 'missing_not_interested' });
-          return;
-        }
-
-        if (attempts > 40) { 
-          clearInterval(interval);
-          if (foundAny) {
-              const availableItems = Array.from(items).map(i => i.innerText || i.textContent || "unknown").filter(t => t.trim() !== "");
-              debugLog('UI Items found but none matched "Not interested":', availableItems);
-          }
-          document.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Escape',
-            code: 'Escape',
-            bubbles: true
-          }));
-          restoreActionScrolling();
-          resolve({ success: false, reason: foundAny ? 'missing_not_interested' : 'menu_timeout' });
-        }
-      }, 100);
-    });
+      }
+      if (pageType === 'home' && foundAny && attempt >= 5) {
+        return { success: false, reason: 'missing_not_interested' };
+      }
+    }
+    return { success: false, reason: foundAny ? 'missing_not_interested' : 'menu_timeout' };
   }
 
+  window.addEventListener('youtube-skip-cancel', (event) => {
+    if (activeAction?.videoId === event.detail.videoId) {
+      activeAction.controller.abort(actionFailure('cancelled'));
+    }
+  });
+  document.addEventListener('yt-navigate-start', () => {
+    activeAction?.controller.abort(actionFailure('stale_page'));
+  });
+  window.addEventListener('popstate', () => {
+    activeAction?.controller.abort(actionFailure('stale_page'));
+  });
+
   window.addEventListener('youtube-skip-action', async function(e) {
-    const { videoId, pageType = 'home', loggingEnabled = false } = e.detail;
+    const { videoId, targetVideoId, pageUrl, pageType = 'home', loggingEnabled = false } = e.detail;
     const debugLog = (...args) => {
       if (loggingEnabled) console.log('[youtube_skip]', ...args);
     };
@@ -251,7 +298,7 @@
     const currentPageType = window.location.pathname === '/watch'
       ? 'watch'
       : (window.location.pathname === '/' || window.location.pathname === '' ? 'home' : null);
-    if (pageType !== currentPageType) {
+    if (pageType !== currentPageType || pageUrl !== window.location.href) {
       sendResponse(false, 'stale_page');
       return;
     }
@@ -264,15 +311,30 @@
       }));
     }
 
+    if (activeAction) {
+      sendResponse(false, 'action_busy');
+      return;
+    }
     if (!videoElement) {
       debugLog('Video element not found for action:', videoId);
       sendResponse(false, 'missing_element');
       return;
     }
 
+    const action = {
+      videoId, targetVideoId, pageUrl, element: videoElement, controller: new AbortController(),
+      parent: videoElement.parentElement,
+      index: videoElement.parentElement ? Array.from(videoElement.parentElement.children).indexOf(videoElement) : -1,
+      previousSibling: videoElement.previousElementSibling,
+      nextSibling: videoElement.nextElementSibling,
+      existingResults: new Set(Array.from(document.querySelectorAll(hiddenResultSelector)).filter(isVisible))
+    };
+    activeAction = action;
     let restoreActionScrolling = null;
+    let response = { success: false, method: 'failed' };
 
     try {
+      assertCurrent(action);
       let data = videoElement.data || (videoElement.__data && videoElement.__data.data) || videoElement.__data;
       
       if (!data) {
@@ -295,31 +357,34 @@
 
       if (command && (ytdApp?.resolveCommand || ytdApp?.resolve)) {
         const resolver = (ytdApp.resolveCommand || ytdApp.resolve).bind(ytdApp);
-        resolver(command);
+        Promise.resolve(resolver(command)).catch(() => {
+          action.controller.abort(actionFailure('command_failed'));
+        });
         debugLog('v1/feedback triggered via API for:', videoId);
-        setTimeout(() => {
-          restoreActionScrolling();
-          sendResponse(true, 'api');
-        }, pageType === 'watch' ? 200 : 700);
-        return;
-      }
-
-      debugLog('API discovery failed, attempting UI simulation for:', videoId);
-      const uiResult = await clickNotInterestedUI(videoElement, pageType, debugLog, restoreActionScrolling);
-      if (uiResult.success) {
-        debugLog('v1/feedback triggered via UI Click for:', videoId);
-        sendResponse(true, 'ui');
+        response.method = 'api';
       } else {
-        debugLog('All methods failed for:', videoId);
-        if (data) {
-            debugLog('Failed data object:', data);
-        }
-        sendResponse(false, uiResult.reason || 'failed');
+        debugLog('API discovery failed, attempting UI simulation for:', videoId);
+        const uiResult = await clickNotInterestedUI(action, pageType, debugLog);
+        if (!uiResult.success) throw actionFailure(uiResult.reason);
+        response.method = 'ui';
       }
+      const result = await waitForHiddenResult(action);
+      assertCurrent(action, false);
+      if (!isVisible(result)) throw actionFailure('stale_target');
+      result.setAttribute('data-youtube-skip-result-id', videoId);
+      response.success = true;
     } catch (err) {
-      restoreActionScrolling?.();
-      console.error('[youtube_skip] Injection error:', err);
-      sendResponse(false, 'error');
+      response = { success: false, method: err.method || 'error' };
+      if (err.method) debugLog('Action did not complete:', err.method);
+      else console.error('[youtube_skip] Injection error:', err);
+    } finally {
+      if (action.openedMenu && window.location.href === pageUrl &&
+          (isVisible(action.menuPopup) || (!action.menuPopup && Array.from(document.querySelectorAll(popupSelector)).some(isVisible)))) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+      }
+      restoreActionScrolling?.(!action.controller.signal.aborted && window.location.href === pageUrl);
+      activeAction = null;
     }
+    sendResponse(response.success, response.method);
   });
 })();

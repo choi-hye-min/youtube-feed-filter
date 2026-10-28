@@ -96,11 +96,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[youtube_skip] Background: Setting logging enabled to', request.enabled);
     chrome.storage.local.set({ [STORAGE_KEYS.LOGGING]: request.enabled }, () => {
       // Notify content scripts
-      chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
-        tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, { action: 'setLoggingEnabled', enabled: request.enabled }).catch(() => {});
-        });
-      });
+      notifyYouTubeTabs();
       sendResponse({ success: true });
     });
     return true; // Asynchronous

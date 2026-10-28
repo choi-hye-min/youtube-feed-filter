@@ -13,6 +13,7 @@
   };
 
   const stats = { detected: 0, skipped: 0 };
+  const detectedCards = new WeakMap();
 
   function updateBadge() {
     chrome.runtime.sendMessage({
@@ -120,8 +121,12 @@
 
   function createRuntime(adapter, filterState) {
     const processedVideos = new Set();
+    const queuedVideos = new Set();
     const queue = [];
+    const pageUrl = window.location.href;
     let processing = false;
+    let currentItem = null;
+    let activeRequest = null;
     let observer = null;
     let intervalId = null;
     let scrollTimer = null;
@@ -132,50 +137,10 @@
       if (filterState.loggingEnabled) console.log(`[youtube_skip:${adapter.key}]`, ...args);
     };
 
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    function captureElementContext(element) {
-      const parent = element.parentElement;
-      if (!parent) return null;
-      const children = Array.from(parent.children);
-      return {
-        parent,
-        previousSibling: element.previousElementSibling,
-        nextSibling: element.nextElementSibling,
-        index: children.indexOf(element)
-      };
-    }
-
-    function getContextCandidates(element, context) {
-      const candidates = [];
-      if (element?.isConnected) candidates.push(element);
-      if (context?.previousSibling?.nextElementSibling) candidates.push(context.previousSibling.nextElementSibling);
-      if (context?.nextSibling?.previousElementSibling) candidates.push(context.nextSibling.previousElementSibling);
-      if (context?.parent?.isConnected) {
-        candidates.push(context.parent.children[context.index]);
-        candidates.push(context.parent);
-      }
-      return candidates.filter(Boolean);
-    }
-
-    function findHiddenResult(element, context) {
-      for (const candidate of getContextCandidates(element, context)) {
-        const result = candidate.matches?.('.ytDismissibleItemReplacedContent')
-          ? candidate
-          : candidate.querySelector?.('.ytDismissibleItemReplacedContent');
-        if (result) return result;
-      }
-      return null;
-    }
-
-    async function waitForHiddenResult(element, context) {
-      const deadline = Date.now() + 1600;
-      while (!stopped && Date.now() < deadline) {
-        const result = findHiddenResult(element, context);
-        if (result) return result;
-        await wait(100);
-      }
-      return findHiddenResult(element, context);
+    function isActive() {
+      return !stopped && filterState.enabled &&
+        filterState[`${adapter.key}Enabled`] !== false &&
+        adapter.matchesPath(window.location.pathname) && window.location.href === pageUrl;
     }
 
     function setHiddenResultReason(result, videoInfo) {
@@ -215,29 +180,40 @@
       );
     }
 
-    function reset() {
+    function reset(clearCompleted = false) {
       processedVideos.clear();
       const runtimeSelector = [
         `[${attribute('processed')}]`,
         `[${attribute('video-id')}]`
       ].join(', ');
       for (const element of document.querySelectorAll(runtimeSelector)) {
+        if (!clearCompleted && element.getAttribute(attribute('processed')) === 'done') continue;
         element.removeAttribute(attribute('processed'));
         element.removeAttribute(attribute('video-id'));
         element.removeAttribute('data-youtube-skip-id');
       }
     }
 
-    function performAction(element) {
+    function performAction(element, videoId) {
       return new Promise((resolve) => {
         const requestId = `yt-skip-${adapter.key}-${Math.random().toString(36).slice(2, 11)}`;
         element.dataset.youtubeSkipId = requestId;
-        const timeout = setTimeout(() => finish(false, 'timeout'), 8000);
+        const timeout = setTimeout(() => cancel('timeout'), 8000);
+        let finished = false;
 
         function finish(success, method) {
+          if (finished) return;
+          finished = true;
           clearTimeout(timeout);
           window.removeEventListener('youtube-skip-response', onResponse);
-          resolve({ success, method });
+          activeRequest = null;
+          resolve({ success, method, requestId });
+        }
+        function cancel(method = 'cancelled') {
+          finish(false, method);
+          window.dispatchEvent(new CustomEvent('youtube-skip-cancel', {
+            detail: { videoId: requestId }
+          }));
         }
         function onResponse(event) {
           if (event.detail.videoId === requestId) {
@@ -245,9 +221,16 @@
           }
         }
 
+        activeRequest = { cancel };
         window.addEventListener('youtube-skip-response', onResponse);
         window.dispatchEvent(new CustomEvent('youtube-skip-action', {
-          detail: { videoId: requestId, pageType: adapter.key, loggingEnabled: filterState.loggingEnabled }
+          detail: {
+            videoId: requestId,
+            targetVideoId: videoId,
+            pageType: adapter.key,
+            pageUrl,
+            loggingEnabled: filterState.loggingEnabled
+          }
         }));
       });
     }
@@ -255,46 +238,58 @@
     async function processQueue() {
       if (processing) return;
       processing = true;
-      while (queue.length && !stopped) {
+      while (queue.length && isActive()) {
         const item = queue.shift();
+        currentItem = item;
         let actionMethod = null;
         try {
           let success = false;
-          let element = item.element;
-          let context = captureElementContext(element);
+          let hiddenResult = null;
 
-          for (let attempt = 0; attempt < 3 && !success; attempt++) {
-            element = findCurrentElement(item.videoId) || element;
-            if (!isProcessableElement(element)) {
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              continue;
-            }
+          for (let attempt = 0; attempt < 3 && !success && isActive(); attempt++) {
+            const element = findCurrentElement(item.videoId);
+            if (!element || processedVideos.has(item.videoId)) break;
+            const age = adapter.extractAge(element);
+            const thresholdMs = THRESHOLD_PRESETS[filterState.threshold];
+            if (!age || !thresholdMs || age.ms < thresholdMs) break;
 
+            item.element = element;
+            item.videoInfo = { ageText: age.displayText || age.text, title: adapter.extractTitle(element) };
             element.setAttribute(attribute('processed'), 'queued');
-            context = captureElementContext(element);
-            const result = await performAction(element);
-            success = result.success;
+            const result = await performAction(element, item.videoId);
+            if (!isActive()) break;
+            hiddenResult = result.success
+              ? document.querySelector(`[data-youtube-skip-result-id="${result.requestId}"]`)
+              : null;
+            success = Boolean(hiddenResult);
             actionMethod = result.method;
-            if (!success && actionMethod === 'missing_not_interested') break;
+            if (!success && ['missing_not_interested', 'cancelled', 'stale_page', 'stale_target'].includes(actionMethod)) break;
             if (!success) await new Promise((resolve) => setTimeout(resolve, 500));
           }
 
-          if (success && !stopped) {
-            if (item.videoId) processedVideos.add(item.videoId);
+          if (!isActive()) break;
+          if (success) {
+            processedVideos.add(item.videoId);
             stats.skipped++;
             updateBadge();
-            const hiddenResult = await waitForHiddenResult(element, context);
             setHiddenResultReason(hiddenResult, item.videoInfo);
-            if (element.isConnected) {
-              element.setAttribute(attribute('processed'), 'done');
-              if (item.videoId) element.setAttribute(attribute('video-id'), item.videoId);
+            if (item.element.isConnected) {
+              item.element.setAttribute(attribute('processed'), 'done');
+              item.element.setAttribute(attribute('video-id'), item.videoId);
             }
-          } else if (!stopped && element?.isConnected) {
-            element.setAttribute(attribute('processed'), 'failed');
-            debugLog('Failed after retries', item.videoId);
+          } else if (getVideoId(item.element) === item.videoId) {
+            if (actionMethod && !['menu_busy', 'action_busy', 'cancelled', 'stale_page', 'stale_target'].includes(actionMethod)) {
+              item.element.setAttribute(attribute('processed'), 'failed');
+              debugLog('Failed after retries', item.videoId);
+            } else {
+              item.element.removeAttribute(attribute('processed'));
+            }
           }
         } catch (error) {
           console.error(`[youtube_skip:${adapter.key}] Queue error`, error);
+        } finally {
+          queuedVideos.delete(item.videoId);
+          currentItem = null;
         }
         const actionDelay = adapter.getActionDelay?.(actionMethod) ?? 700;
         if (actionDelay > 0) {
@@ -306,8 +301,9 @@
 
     function queueAction(element, videoInfo, videoId) {
       const state = element.getAttribute(attribute('processed'));
-      if (state === 'queued' || state === 'done') return;
+      if (!videoId || queuedVideos.has(videoId) || state === 'queued' || state === 'done') return;
       element.setAttribute(attribute('processed'), 'queued');
+      queuedVideos.add(videoId);
       queue.push({ element, videoInfo, videoId });
       processQueue();
     }
@@ -316,7 +312,7 @@
       if (!videoId) return null;
       for (const candidate of adapter.findCandidates(document)) {
         const element = adapter.normalizeCandidate(candidate);
-        if (element && adapter.isEligible(element) && getVideoId(element) === videoId) {
+        if (element && adapter.isEligible(element) && isProcessableElement(element) && getVideoId(element) === videoId) {
           return element;
         }
       }
@@ -324,7 +320,7 @@
     }
 
     function apply() {
-      if (!filterState.enabled || !adapter.matchesPath(window.location.pathname)) return;
+      if (!isActive()) return;
       const thresholdMs = THRESHOLD_PRESETS[filterState.threshold];
       if (!thresholdMs) return;
 
@@ -346,8 +342,11 @@
 
         const state = element.getAttribute(attribute('processed'));
         if (['queued', 'done', 'checked', 'failed'].includes(state)) continue;
-        stats.detected++;
-        updateBadge();
+        if (!detectedCards.has(element) || detectedCards.get(element) !== videoId) {
+          detectedCards.set(element, videoId);
+          stats.detected++;
+          updateBadge();
+        }
         element.setAttribute(attribute('processed'), 'detected');
 
         const age = adapter.extractAge(element);
@@ -381,11 +380,18 @@
 
     function stop() {
       stopped = true;
+      activeRequest?.cancel();
       observer?.disconnect();
       clearInterval(intervalId);
       clearTimeout(scrollTimer);
       window.removeEventListener('scroll', onScroll);
+      for (const item of [...queue, currentItem].filter(Boolean)) {
+        if (item.element.getAttribute(attribute('processed')) === 'queued') {
+          item.element.removeAttribute(attribute('processed'));
+        }
+      }
       queue.length = 0;
+      queuedVideos.clear();
       debugLog('Stopped');
     }
 

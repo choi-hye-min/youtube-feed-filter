@@ -7,20 +7,30 @@
     loggingEnabled: false
   };
   let activePageKey = null;
+  let activePageUrl = null;
+  let activeThreshold = null;
   let runtime = null;
   let authState = 'unknown';
   let authObserver = null;
+  let stateLoaded = false;
+  let mainScriptLoaded = false;
+  let navigating = false;
 
   function injectMainScript() {
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('inject.js');
+    script.onload = () => {
+      mainScriptLoaded = true;
+      script.remove();
+      activatePage();
+    };
     (document.head || document.documentElement).appendChild(script);
-    script.onload = () => script.remove();
   }
 
   function getAdapter() {
+    if (!stateLoaded || !mainScriptLoaded || navigating) return null;
     if (!filterState.enabled) return null;
-    if (authState === 'signed-out') return null;
+    if (authState !== 'signed-in') return null;
     if (filterState.watchEnabled && window.YouTubeSkipWatch.matchesPath(window.location.pathname)) {
       return window.YouTubeSkipWatch;
     }
@@ -57,41 +67,52 @@
     refreshAuthState();
 
     if (authState === 'signed-out') {
-      runtime?.stop();
-      runtime = null;
-      activePageKey = null;
       window.YouTubeSkipShared.showSignInNotice();
-      return;
+    } else {
+      window.YouTubeSkipShared.hideSignInNotice();
     }
 
-    window.YouTubeSkipShared.hideSignInNotice();
     const adapter = getAdapter();
-    const nextKey = adapter?.key || null;
-    if (nextKey === activePageKey) {
+    if (adapter?.key === activePageKey && activePageUrl === window.location.href && activeThreshold === filterState.threshold) {
       runtime?.apply();
       return;
     }
 
-    runtime?.stop();
-    runtime = null;
-    activePageKey = nextKey;
+    stopRuntime();
     if (adapter) {
+      activePageKey = adapter.key;
+      activePageUrl = window.location.href;
+      activeThreshold = filterState.threshold;
       runtime = window.YouTubeSkipShared.createRuntime(adapter, filterState);
       runtime.start();
     }
   }
 
-  function resetHomePage() {
-    if (activePageKey !== 'home') return;
+  function stopRuntime(clearCompleted = false) {
     runtime?.stop();
-    runtime?.reset();
+    runtime?.reset(clearCompleted);
     runtime = null;
     activePageKey = null;
+    activePageUrl = null;
+    activeThreshold = null;
+  }
+
+  function startNavigation() {
+    navigating = true;
+    stopRuntime(activePageKey === 'home');
+  }
+
+  function finishNavigation() {
+    navigating = false;
+    activatePage();
   }
 
   function loadState(callback) {
     chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
-      if (response) Object.assign(filterState, response);
+      if (!chrome.runtime.lastError && response) {
+        Object.assign(filterState, response);
+        stateLoaded = true;
+      }
       callback?.();
     });
   }
@@ -108,7 +129,7 @@
       sendResponse(window.YouTubeSkipShared.getStats());
     }
     if (request.action === 'getAuthState') {
-      refreshAuthState();
+      if (refreshAuthState()) activatePage();
       sendResponse({ authState });
     }
     return false;
@@ -122,9 +143,9 @@
       if (changed || authState === 'unknown') activatePage();
     });
     authObserver.observe(document.documentElement, { childList: true, subtree: true });
-    document.addEventListener('yt-navigate-start', resetHomePage);
-    document.addEventListener('yt-navigate-finish', activatePage);
-    window.addEventListener('popstate', activatePage);
+    document.addEventListener('yt-navigate-start', startNavigation);
+    document.addEventListener('yt-navigate-finish', finishNavigation);
+    window.addEventListener('popstate', finishNavigation);
   }
 
   if (document.readyState === 'loading') {

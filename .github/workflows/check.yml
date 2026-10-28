@@ -1,0 +1,26 @@
+name: Extension Checks
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate extension files
+        run: node tools/check-extension.cjs
+      - name: Run regression tests
+        run: node --test tests/automated/*.test.cjs
+      - name: Check PowerShell branch validation
+        shell: pwsh
+        run: ./tests/automated/feature-branch.test.ps1

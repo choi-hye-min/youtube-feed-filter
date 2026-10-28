@@ -16,6 +16,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate extension files and release version
+        run: node tools/check-extension.cjs
+        env:
+          EXTENSION_RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Run regression tests
+        run: node --test tests/automated/*.test.cjs
+
+      - name: Check PowerShell branch validation
+        shell: pwsh
+        run: ./tests/automated/feature-branch.test.ps1
+
       - name: Install zip
         run: sudo apt-get install zip
 

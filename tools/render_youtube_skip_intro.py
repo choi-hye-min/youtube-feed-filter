@@ -1,5 +1,7 @@
 from pathlib import Path
+import argparse
 import math
+import shutil
 import subprocess
 
 import numpy as np
@@ -8,36 +10,53 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / 'dist'
-OUT_DIR.mkdir(exist_ok=True)
 
 VIDEO_PATH = OUT_DIR / 'youtube_skip_service_intro_60s.mp4'
 THUMB_PATH = OUT_DIR / 'youtube_skip_service_intro_thumbnail.jpg'
-
-FFMPEG = (
-    ROOT.parent.parent
-    / '.cache'
-    / 'codex-runtimes'
-    / 'codex-primary-runtime'
-    / 'dependencies'
-    / 'python'
-    / 'Lib'
-    / 'site-packages'
-    / 'imageio_ffmpeg'
-    / 'binaries'
-    / 'ffmpeg-win-x86_64-v7.1.exe'
-)
 
 W, H = 1920, 1080
 FPS = 24
 DURATION = 60
 
-FONT_REGULAR = 'C:/Windows/Fonts/malgun.ttf'
-FONT_BOLD = 'C:/Windows/Fonts/malgunbd.ttf'
+FONT_REGULAR = None
+FONT_BOLD = None
 
 RED = (255, 0, 18)
 WHITE = (248, 248, 248)
 MUTED = (196, 196, 196)
 GREEN = (48, 205, 89)
+
+
+def find_ffmpeg():
+    executable = shutil.which('ffmpeg')
+    if executable:
+        return executable
+    try:
+        from imageio_ffmpeg import get_ffmpeg_exe
+    except ImportError as exc:
+        raise FileNotFoundError('Install ffmpeg on PATH or the imageio_ffmpeg Python package.') from exc
+    return get_ffmpeg_exe()
+
+
+def find_fonts(regular=None, bold=None):
+    candidates = [
+        ('C:/Windows/Fonts/malgun.ttf', 'C:/Windows/Fonts/malgunbd.ttf'),
+        ('/System/Library/Fonts/AppleSDGothicNeo.ttc', '/System/Library/Fonts/AppleSDGothicNeo.ttc'),
+        ('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc')
+    ]
+    if regular is None:
+        for candidate, candidate_bold in candidates:
+            if Path(candidate).is_file():
+                regular = candidate
+                bold = bold or (candidate_bold if Path(candidate_bold).is_file() else candidate)
+                break
+    if regular is None:
+        raise FileNotFoundError('No Korean font found. Supply a font file with --font.')
+    bold = bold or regular
+    for font_path in (regular, bold):
+        if not Path(font_path).is_file():
+            raise FileNotFoundError(f'Font not found: {font_path}')
+    return regular, bold
 
 
 def font(size, bold=False):
@@ -194,11 +213,17 @@ def save_thumbnail():
 
 
 def main():
-    if not FFMPEG.exists():
-        raise FileNotFoundError(f'ffmpeg not found: {FFMPEG}')
+    global FONT_REGULAR, FONT_BOLD
+    parser = argparse.ArgumentParser(description='Render the YouTube Skip introduction video.')
+    parser.add_argument('--font', help='Path to a Korean-capable regular font file.')
+    parser.add_argument('--bold-font', help='Path to a Korean-capable bold font file (defaults to --font).')
+    args = parser.parse_args()
+    ffmpeg = find_ffmpeg()
+    FONT_REGULAR, FONT_BOLD = find_fonts(args.font, args.bold_font)
+    OUT_DIR.mkdir(exist_ok=True)
 
     cmd = [
-        str(FFMPEG),
+        ffmpeg,
         '-y',
         '-f', 'rawvideo',
         '-vcodec', 'rawvideo',

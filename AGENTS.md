@@ -8,6 +8,13 @@ This repository contains a Manifest V3 Chrome extension with no build step. Exte
 
 There is no package manager or compilation step. For local development:
 
+```bash
+node tools/check-extension.cjs
+node --test tests/automated/*.test.cjs
+```
+
+Run these checks with Node.js 22 or newer before submitting changes.
+
 ```powershell
 git config core.hooksPath .githooks
 ```
@@ -22,7 +29,7 @@ Match the existing plain JavaScript style: two-space indentation, semicolons, si
 
 ## Testing Guidelines
 
-No automated test framework or coverage threshold is configured. Manually verify both the YouTube home feed and `/watch` recommendations in English and Korean where relevant. Check filtering on/off states, thresholds, Detected/Skipped counts, placeholder content, navigation without a full reload, and browser console errors. Record reusable procedures under `tests/manual/`.
+Regression tests use Node's built-in test runner under `tests/automated/`; no third-party test dependencies or coverage threshold are configured. Manually verify both the YouTube home feed and `/watch` recommendations in English and Korean where relevant. Check filtering on/off states, thresholds, Detected/Skipped counts, placeholder content, navigation without a full reload, and browser console errors. Record reusable procedures under `tests/manual/`.
 
 ## Commit & Pull Request Guidelines
 

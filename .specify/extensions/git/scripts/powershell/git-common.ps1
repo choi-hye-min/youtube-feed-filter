@@ -31,8 +31,8 @@ function Test-FeatureBranch {
     $hasMalformedTimestamp = ($Branch -match '^[0-9]{7}-[0-9]{6}-') -or
                             ($Branch -match '^(?:\d{7}|\d{8})-\d{6}$')
     if ($hasMalformedTimestamp) {
-        Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name"
+        Write-Warning "Not on a feature branch. Current branch: $Branch"
+        Write-Warning "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name"
         return $false
     }
 
@@ -44,7 +44,7 @@ function Test-FeatureBranch {
         return $true
     }
 
-    Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-    Write-Output "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name"
+    Write-Warning "Not on a feature branch. Current branch: $Branch"
+    Write-Warning "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name"
     return $false
 }

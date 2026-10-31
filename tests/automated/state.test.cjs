@@ -25,8 +25,8 @@ function createHarness({ auth = 'signed-in', url = 'https://www.youtube.com/' } 
       showSignInNotice() {},
       hideSignInNotice() {},
       getStats: () => ({ detected: 0, skipped: 0 }),
-      createRuntime(adapter, filterState) {
-        const runtime = { key: adapter.key, state: filterState, calls: [] };
+      createRuntime(adapter, filterState, visit) {
+        const runtime = { key: adapter.key, state: filterState, visit, calls: [] };
         for (const method of ['start', 'stop', 'reset', 'apply']) {
           runtime[method] = () => runtime.calls.push(method);
         }
@@ -55,7 +55,7 @@ function createHarness({ auth = 'signed-in', url = 'https://www.youtube.com/' } 
     }
   } };
   vm.runInNewContext(source('content-script.js'), {
-    window, document, chrome,
+    window, document, chrome, crypto: require('node:crypto'),
     MutationObserver: class {
       constructor(callback) { authObserver = callback; }
       observe() {}
@@ -173,11 +173,13 @@ test('navigation blocks old home and watch runtimes until the next page finishes
   }
 });
 
-test('popstate to another watch URL recreates its runtime', () => {
+test('popstate waits for YouTube navigation completion before recreating its runtime', () => {
   const harness = startHarness({ url: 'https://www.youtube.com/watch?v=one' });
   harness.setUrl('https://www.youtube.com/watch?v=two');
   harness.event('popstate');
   assert.deepEqual(harness.runtimes[0].calls, ['start', 'stop', 'reset']);
+  assert.equal(harness.runtimes.length, 1);
+  harness.event('yt-navigate-finish');
   assert.equal(harness.runtimes.length, 2);
 });
 
@@ -191,6 +193,7 @@ test('background logging changes immediately reach the active content runtime', 
     chrome: {
       runtime: {
         onInstalled: { addListener() {} },
+        onStartup: { addListener() {} },
         onMessage: { addListener: (listener) => { backgroundListener = listener; } }
       },
       storage: { local: {
@@ -198,6 +201,7 @@ test('background logging changes immediately reach the active content runtime', 
         set: (values, callback) => { Object.assign(storage, values); callback(); }
       } },
       tabs: {
+        onRemoved: { addListener() {} },
         query: (query, callback) => callback([{ id: 1 }]),
         sendMessage(id, message) {
           broadcasts.push(message.action);
@@ -215,4 +219,45 @@ test('background logging changes immediately reach the active content runtime', 
   }
   assert.deepEqual(broadcasts, ['applyFilter', 'applyFilter']);
   assert.equal(harness.runtimes.length, 1);
+});
+
+
+test('home visit survives setting changes and toggles but changes on real navigation', () => {
+  const h = startHarness();
+  const first = h.runtimes[0].visit;
+  assert.ok(first?.id);
+  h.applyState({ repeatEnabled: true, repeatThreshold: 3 });
+  h.applyState({ repeatThreshold: 5 });
+  h.applyState({ homeEnabled: false });
+  h.applyState({ homeEnabled: true });
+  assert.equal(h.runtimes.at(-1).visit, first);
+  h.event('yt-navigate-start');
+  h.event('yt-navigate-start');
+  h.event('popstate');
+  assert.equal(h.runtimes.at(-1).visit, first, 'popstate cannot finish a pending navigation');
+  h.event('yt-navigate-finish');
+  const next = h.runtimes.at(-1).visit;
+  assert.notEqual(next.id, first.id);
+  assert.equal(first.closed, true);
+  h.event('yt-navigate-finish');
+  h.event('popstate');
+  assert.equal(h.runtimes.at(-1).visit, next);
+});
+
+test('home to watch to home starts a fresh visit and watch has no exposure context', () => {
+  const h = startHarness();
+  const first = h.runtimes[0].visit;
+  h.event('yt-navigate-start');
+  h.setUrl('https://www.youtube.com/watch?v=video');
+  h.event('yt-navigate-finish');
+  assert.equal(h.runtimes.at(-1).visit, null);
+  h.setUrl('https://www.youtube.com/');
+  h.event('popstate');
+  h.event('yt-navigate-start');
+  const runtimeCount = h.runtimes.length;
+  h.event('yt-navigate-finish');
+  h.event('popstate');
+  h.event('yt-navigate-finish');
+  assert.equal(h.runtimes.length, runtimeCount + 1);
+  assert.notEqual(h.runtimes.at(-1).visit.id, first.id);
 });

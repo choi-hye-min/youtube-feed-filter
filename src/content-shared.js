@@ -119,8 +119,8 @@
     document.getElementById('youtube-skip-signin-notice')?.remove();
   }
 
-  function createRuntime(adapter, filterState) {
-    const processedVideos = new Set();
+  function createRuntime(adapter, filterState, homeVisit = null) {
+    const processedVideos = homeVisit?.processed || new Set();
     const queuedVideos = new Set();
     const queue = [];
     const pageUrl = window.location.href;
@@ -128,6 +128,7 @@
     let currentItem = null;
     let activeRequest = null;
     let observer = null;
+    let exposureObserver = null;
     let intervalId = null;
     let scrollTimer = null;
     let stopped = false;
@@ -143,11 +144,59 @@
         adapter.matchesPath(window.location.pathname) && window.location.href === pageUrl;
     }
 
+    function canRecordExposure() {
+      return isActive() && adapter.key === 'home' && filterState.repeatEnabled && homeVisit && !homeVisit.closed;
+    }
+
+    function repeatCount(videoId) {
+      const count = homeVisit?.counts.get(videoId) || 0;
+      return canRecordExposure() && Number.isSafeInteger(filterState.repeatThreshold) &&
+        filterState.repeatThreshold >= 2 && count >= filterState.repeatThreshold ? count : 0;
+    }
+
+    function videoDecision(element, videoId) {
+      const count = repeatCount(videoId);
+      const age = adapter.extractAge(element);
+      const thresholdMs = THRESHOLD_PRESETS[filterState.threshold];
+      if (!count && (!age || !thresholdMs || age.ms < thresholdMs)) return null;
+      return { ageText: age?.displayText || age?.text, repeatCount: count, title: adapter.extractTitle(element) };
+    }
+
+    function recordExposure(element) {
+      if (!canRecordExposure() || !adapter.isEligible(element) || !isProcessableElement(element)) return;
+      if (!homeVisit.ready && !homeVisit.registering) return;
+      const videoId = getVideoId(element);
+      if (!videoId || homeVisit.counts.has(videoId) || homeVisit.pending.has(videoId)) return;
+      homeVisit.pending.add(videoId);
+      chrome.runtime.sendMessage({ action: 'recordHomeExposure', visitId: homeVisit.id, videoId }, (response) => {
+        homeVisit.pending.delete(videoId);
+        if (chrome.runtime.lastError || !response?.success || response.visitId !== homeVisit.id || homeVisit.closed) return;
+        if (!Number.isSafeInteger(response.count) || response.count < 1) return;
+        homeVisit.counts.set(videoId, response.count);
+        if (isActive()) apply();
+      });
+    }
+
+    function prepareExposureTracking() {
+      if (!canRecordExposure()) return;
+      if (!exposureObserver) exposureObserver = adapter.createExposureObserver(recordExposure);
+      if (homeVisit.ready || homeVisit.registering) return;
+      homeVisit.registering = true;
+      // The background queues registration before subsequent exposure records.
+      chrome.runtime.sendMessage({ action: 'beginHomeVisit', visitId: homeVisit.id }, (response) => {
+        homeVisit.registering = false;
+        if (chrome.runtime.lastError || !response?.success || response.visitId !== homeVisit.id || homeVisit.closed) return;
+        homeVisit.ready = true;
+        if (isActive()) apply();
+      });
+    }
+
     function setHiddenResultReason(result, videoInfo) {
       if (!result) return;
       const uploadAge = videoInfo.ageText || '기준 초과';
       const title = videoInfo.title || '알 수 없는 제목';
-      const ariaLabel = `[${uploadAge} 업로드] ${title}`;
+      const reason = videoInfo.repeatCount ? `홈에서 누적 ${videoInfo.repeatCount}회 노출` : `${uploadAge} 업로드`;
+      const ariaLabel = `[${reason}] ${title}`;
       const textNodes = Array.from(result.querySelectorAll('yt-formatted-string, h1, h2, h3, span'))
         .filter((node) =>
           !node.closest('button, tp-yt-paper-button, a') &&
@@ -157,7 +206,7 @@
       if (target) {
         const lineBreak = document.createElement('br');
         target.replaceChildren(
-          document.createTextNode(`[${uploadAge} 업로드]`),
+          document.createTextNode(`[${reason}]`),
           lineBreak,
           document.createTextNode(title)
         );
@@ -181,7 +230,7 @@
     }
 
     function reset(clearCompleted = false) {
-      processedVideos.clear();
+      if (!homeVisit || clearCompleted) processedVideos.clear();
       const runtimeSelector = [
         `[${attribute('processed')}]`,
         `[${attribute('video-id')}]`
@@ -249,12 +298,11 @@
           for (let attempt = 0; attempt < 3 && !success && isActive(); attempt++) {
             const element = findCurrentElement(item.videoId);
             if (!element || processedVideos.has(item.videoId)) break;
-            const age = adapter.extractAge(element);
-            const thresholdMs = THRESHOLD_PRESETS[filterState.threshold];
-            if (!age || !thresholdMs || age.ms < thresholdMs) break;
+            const decision = videoDecision(element, item.videoId);
+            if (!decision) break;
 
             item.element = element;
-            item.videoInfo = { ageText: age.displayText || age.text, title: adapter.extractTitle(element) };
+            item.videoInfo = decision;
             element.setAttribute(attribute('processed'), 'queued');
             const result = await performAction(element, item.videoId);
             if (!isActive()) break;
@@ -321,8 +369,7 @@
 
     function apply() {
       if (!isActive()) return;
-      const thresholdMs = THRESHOLD_PRESETS[filterState.threshold];
-      if (!thresholdMs) return;
+      prepareExposureTracking();
 
       for (const candidate of adapter.findCandidates(document)) {
         const element = adapter.normalizeCandidate(candidate);
@@ -334,6 +381,7 @@
           element.removeAttribute(attribute('processed'));
         }
         if (videoId) element.setAttribute(attribute('video-id'), videoId);
+        exposureObserver?.observe(element);
 
         if (videoId && processedVideos.has(videoId)) {
           element.setAttribute(attribute('processed'), 'done');
@@ -341,7 +389,8 @@
         }
 
         const state = element.getAttribute(attribute('processed'));
-        if (['queued', 'done', 'checked', 'failed'].includes(state)) continue;
+        if (['queued', 'done', 'failed'].includes(state)) continue;
+        if (state === 'checked' && !repeatCount(videoId)) continue;
         if (!detectedCards.has(element) || detectedCards.get(element) !== videoId) {
           detectedCards.set(element, videoId);
           stats.detected++;
@@ -349,14 +398,14 @@
         }
         element.setAttribute(attribute('processed'), 'detected');
 
-        const age = adapter.extractAge(element);
-        if (!age) continue;
-        if (age.ms >= thresholdMs) {
-          queueAction(element, { ageText: age.displayText || age.text, title: adapter.extractTitle(element) }, videoId);
-        } else {
+        const decision = videoDecision(element, videoId);
+        if (decision) {
+          queueAction(element, decision, videoId);
+        } else if (adapter.extractAge(element)) {
           element.setAttribute(attribute('processed'), 'checked');
         }
       }
+      exposureObserver?.refresh();
     }
 
     function onScroll() {
@@ -382,6 +431,8 @@
       stopped = true;
       activeRequest?.cancel();
       observer?.disconnect();
+      exposureObserver?.disconnect();
+      exposureObserver = null;
       clearInterval(intervalId);
       clearTimeout(scrollTimer);
       window.removeEventListener('scroll', onScroll);

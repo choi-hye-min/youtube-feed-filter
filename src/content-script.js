@@ -4,11 +4,16 @@
     enabled: true,
     homeEnabled: true,
     watchEnabled: true,
+    repeatEnabled: false,
+    repeatThreshold: 3,
     loggingEnabled: false
   };
   let activePageKey = null;
   let activePageUrl = null;
   let activeThreshold = null;
+  let activeRepeatSettings = null;
+  let homeVisit = null;
+  let navigationUrl = window.location.href;
   let runtime = null;
   let authState = 'unknown';
   let authObserver = null;
@@ -65,6 +70,12 @@
 
   function activatePage() {
     refreshAuthState();
+    if (!navigating && window.YouTubeSkipHome.matchesPath(window.location.pathname) && !homeVisit) {
+      homeVisit = {
+        id: crypto.randomUUID(), counts: new Map(), pending: new Set(), processed: new Set(),
+        ready: false, registering: false, closed: false
+      };
+    }
 
     if (authState === 'signed-out') {
       window.YouTubeSkipShared.showSignInNotice();
@@ -73,7 +84,8 @@
     }
 
     const adapter = getAdapter();
-    if (adapter?.key === activePageKey && activePageUrl === window.location.href && activeThreshold === filterState.threshold) {
+    const repeatSettings = `${filterState.repeatEnabled}:${filterState.repeatThreshold}`;
+    if (adapter?.key === activePageKey && activePageUrl === window.location.href && activeThreshold === filterState.threshold && activeRepeatSettings === repeatSettings) {
       runtime?.apply();
       return;
     }
@@ -83,7 +95,8 @@
       activePageKey = adapter.key;
       activePageUrl = window.location.href;
       activeThreshold = filterState.threshold;
-      runtime = window.YouTubeSkipShared.createRuntime(adapter, filterState);
+      activeRepeatSettings = repeatSettings;
+      runtime = window.YouTubeSkipShared.createRuntime(adapter, filterState, adapter.key === 'home' ? homeVisit : null);
       runtime.start();
     }
   }
@@ -95,14 +108,33 @@
     activePageKey = null;
     activePageUrl = null;
     activeThreshold = null;
+    activeRepeatSettings = null;
+  }
+
+  function closeHomeVisit() {
+    if (!homeVisit) return;
+    homeVisit.closed = true;
+    if (homeVisit.ready || homeVisit.registering) {
+      chrome.runtime.sendMessage({ action: 'endHomeVisit', visitId: homeVisit.id }, () => {
+        void chrome.runtime.lastError;
+      });
+    }
+    homeVisit = null;
   }
 
   function startNavigation() {
+    if (navigating) return;
     navigating = true;
     stopRuntime(activePageKey === 'home');
+    closeHomeVisit();
   }
 
   function finishNavigation() {
+    if (navigationUrl !== window.location.href) {
+      stopRuntime(activePageKey === 'home');
+      closeHomeVisit();
+    }
+    navigationUrl = window.location.href;
     navigating = false;
     activatePage();
   }
@@ -145,7 +177,11 @@
     authObserver.observe(document.documentElement, { childList: true, subtree: true });
     document.addEventListener('yt-navigate-start', startNavigation);
     document.addEventListener('yt-navigate-finish', finishNavigation);
-    window.addEventListener('popstate', finishNavigation);
+    window.addEventListener('popstate', () => {
+      if (navigationUrl !== window.location.href) startNavigation();
+    });
+    window.addEventListener('pagehide', startNavigation);
+    window.addEventListener('pageshow', finishNavigation);
   }
 
   if (document.readyState === 'loading') {

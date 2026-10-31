@@ -26,12 +26,15 @@ function card(id, age) {
   };
 }
 
-function harness(cards) {
+function harness(cards, { repeat = false, counts = {}, page = 'home' } = {}) {
   const listeners = new Map();
   const timers = new Map();
   const results = new Map();
   const actions = [];
   const cancellations = [];
+  const messages = [];
+  let onExposure;
+  const visit = { id: 'home-visit', counts: new Map(), pending: new Set(), processed: new Set(), ready: false, registering: false, closed: false };
   let timerId = 0;
   let now = 0;
   const window = {
@@ -50,7 +53,9 @@ function harness(cards) {
     querySelector: selector => results.get(selector.match(/"([^"]+)"/)?.[1]) || null
   };
   vm.runInNewContext(source, {
-    window, document, chrome: { runtime: { sendMessage() {} } }, URL, console,
+    window, document, chrome: { runtime: { sendMessage(message, callback) {
+      if (message.action !== 'updateBadge') messages.push({ message, callback });
+    } } }, URL, console,
     CustomEvent: class {
       constructor(type, init) { this.type = type; this.detail = init.detail; }
     },
@@ -61,14 +66,18 @@ function harness(cards) {
     },
     clearTimeout: id => timers.delete(id), clearInterval: id => timers.delete(id)
   });
-  const state = { threshold: '1week', enabled: true, homeEnabled: true, loggingEnabled: false };
+  const state = { threshold: '1week', enabled: true, homeEnabled: true, watchEnabled: true, loggingEnabled: false, repeatEnabled: repeat, repeatThreshold: 3 };
   const adapter = {
-    key: 'home', matchesPath: value => value === '/', findCandidates: () => cards,
+    key: page, matchesPath: () => true, findCandidates: () => cards,
     normalizeCandidate: element => element, isEligible: () => true,
     extractAge: element => element.age === null ? null : { ms: element.age * day, text: `${element.age} days ago` },
-    extractTitle: element => element.id, getActionDelay: () => 0
+    extractTitle: element => element.id, getActionDelay: () => 0,
+    createExposureObserver(callback) {
+      onExposure = callback;
+      return { observe() {}, refresh() {}, disconnect() {} };
+    }
   };
-  const createRuntime = () => window.YouTubeSkipShared.createRuntime(adapter, state);
+  const createRuntime = () => window.YouTubeSkipShared.createRuntime(adapter, state, visit);
   const runtime = createRuntime();
   window.addEventListener('youtube-skip-action', event => actions.push(event.detail));
   window.addEventListener('youtube-skip-cancel', event => cancellations.push(event.detail));
@@ -95,7 +104,14 @@ function harness(cards) {
     window.dispatchEvent({ type: 'youtube-skip-response', detail: { videoId: action.videoId, success, method } });
     return result;
   }
+  function respondMessage(action, values = {}) {
+    const entry = messages.find(entry => entry.message.action === action && !entry.responded);
+    assert.ok(entry, `Missing ${action} request`);
+    entry.responded = true;
+    entry.callback({ success: true, visitId: visit.id, count: counts[entry.message.videoId] || 1, ...values });
+  }
   return { window, runtime, state, actions, cancellations, respond, flush, advance, createRuntime,
+    visit, messages, respondMessage, expose: element => onExposure(element),
     stats: window.YouTubeSkipShared.getStats };
 }
 
@@ -244,4 +260,125 @@ test('cards without a stable video ID never send feedback actions', () => {
   const h = harness([card(null, 14)]);
   h.runtime.apply();
   assert.equal(h.actions.length, 0);
+});
+
+
+test('repeat filtering waits for actual exposure and persisted count even for checked or ageless cards', () => {
+  for (const age of [1, null]) {
+    const video = card('recent', age);
+    const h = harness([video], { repeat: true, counts: { recent: 3 } });
+    h.runtime.apply();
+    h.respondMessage('beginHomeVisit');
+    assert.equal(h.actions.length, 0);
+    h.expose(video);
+    h.expose(video);
+    assert.equal(h.messages.filter(entry => entry.message.action === 'recordHomeExposure').length, 1);
+    assert.equal(h.actions.length, 0);
+    h.respondMessage('recordHomeExposure');
+    assert.equal(h.actions[0].targetVideoId, 'recent');
+  }
+});
+
+test('repeat reason and skipped require the target hidden result', async () => {
+  const video = card('recent', 1);
+  const h = harness([video], { repeat: true, counts: { recent: 3 } });
+  h.runtime.apply();
+  h.respondMessage('beginHomeVisit');
+  h.expose(video);
+  h.respondMessage('recordHomeExposure');
+  const result = h.respond(h.actions[0], { success: true, hidden: true });
+  await h.flush();
+  assert.equal(result['aria-label'], '[홈에서 누적 3회 노출] recent');
+  assert.equal(h.stats().skipped, 1);
+  assert.equal(h.visit.counts.get('recent'), 3);
+});
+
+test('N changes reuse visit counts and queued work checks the latest N', async () => {
+  const first = card('first', 14);
+  const pending = card('pending', 1);
+  const h = harness([first, pending], { repeat: true, counts: { pending: 3 } });
+  h.runtime.apply();
+  h.respondMessage('beginHomeVisit');
+  h.expose(pending);
+  h.respondMessage('recordHomeExposure');
+  h.state.repeatThreshold = 4;
+  h.respond(h.actions[0]);
+  await h.flush();
+  assert.equal(h.actions.length, 1);
+  h.runtime.stop();
+  h.runtime.reset();
+  first.isConnected = false;
+  h.state.repeatThreshold = 2;
+  h.createRuntime().apply();
+  assert.equal(h.actions[1].targetVideoId, 'pending');
+  assert.equal(h.messages.filter(entry => entry.message.action === 'recordHomeExposure').length, 1);
+});
+
+test('failed persistence and closed visit replies cannot trigger repeat actions', () => {
+  const video = card('recent', 1);
+  for (const close of [false, true]) {
+    const h = harness([video], { repeat: true, counts: { recent: 3 } });
+    h.runtime.apply();
+    h.respondMessage('beginHomeVisit');
+    h.expose(video);
+    if (close) h.visit.closed = true;
+    h.respondMessage('recordHomeExposure', { success: close });
+    assert.equal(h.actions.length, 0);
+    assert.equal(h.visit.counts.size, 0);
+  }
+});
+
+test('repeat is disabled by default and never observes watch recommendations', () => {
+  for (const options of [{}, { repeat: true, page: 'watch' }]) {
+    const h = harness([card('recent', 1)], options);
+    h.runtime.apply();
+    assert.equal(h.messages.length, 0);
+    assert.equal(h.actions.length, 0);
+  }
+});
+
+test('an exposure during visit registration is recorded even if the card disappears before the reply', () => {
+  const video = card('briefly-visible', 1);
+  const h = harness([video], { repeat: true });
+  h.runtime.apply();
+  h.expose(video);
+  video.isConnected = false;
+  assert.deepEqual(h.messages.map(entry => entry.message.action), ['beginHomeVisit', 'recordHomeExposure']);
+  h.respondMessage('beginHomeVisit');
+  h.respondMessage('recordHomeExposure');
+  assert.equal(h.visit.counts.get('briefly-visible'), 1);
+  assert.equal(h.actions.length, 0);
+});
+
+test('an old runtime may retain a committed count for the same visit but cannot act after stopping', () => {
+  const video = card('recent', 1);
+  const h = harness([video], { repeat: true, counts: { recent: 3 } });
+  h.runtime.apply();
+  h.respondMessage('beginHomeVisit');
+  h.expose(video);
+  h.runtime.stop();
+  h.runtime.reset();
+  h.respondMessage('recordHomeExposure');
+  assert.equal(h.visit.counts.get('recent'), 3);
+  assert.equal(h.actions.length, 0);
+  h.createRuntime().apply();
+  assert.equal(h.actions.length, 1);
+});
+
+test('both rules share one action and a successful visit is not repeated after runtime recreation', async () => {
+  const video = card('both', 14);
+  const h = harness([video], { repeat: true });
+  h.visit.counts.set('both', 3);
+  h.visit.ready = true;
+  h.runtime.apply();
+  const result = h.respond(h.actions[0], { success: true, hidden: true });
+  await h.flush();
+  assert.equal(result['aria-label'], '[홈에서 누적 3회 노출] both');
+  assert.equal(h.stats().skipped, 1);
+  h.runtime.stop();
+  h.runtime.reset();
+  video.removeAttribute(processed);
+  h.createRuntime().apply();
+  assert.equal(h.actions.length, 1);
+  assert.equal(h.visit.counts.get('both'), 3);
 });

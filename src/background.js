@@ -11,10 +11,105 @@ const STORAGE_KEYS = {
   ENABLED: 'filter_enabled',
   HOME_ENABLED: 'home_filter_enabled',
   WATCH_ENABLED: 'watch_filter_enabled',
+  REPEAT_ENABLED: 'repeat_filter_enabled',
+  REPEAT_THRESHOLD: 'repeat_exposure_threshold',
   LOGGING: 'logging_enabled'
 };
 
 const STATE_STORAGE_KEYS = Object.values(STORAGE_KEYS);
+const EXPOSURE_HISTORY_KEY = 'home_exposure_history';
+let exposureOperations = Promise.resolve();
+
+function isRepeatThreshold(value) {
+  return Number.isSafeInteger(value) && value >= 2;
+}
+
+function readStorage(keys) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(keys, (result) => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(result);
+    });
+  });
+}
+
+function writeStorage(values) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(values, () => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve();
+    });
+  });
+}
+
+function runExposureTask(operation, sendResponse) {
+  const result = exposureOperations.then(operation);
+  exposureOperations = result.catch(() => {});
+  if (sendResponse) {
+    result.then(sendResponse, () => sendResponse({ success: false, error: 'storage_error' }));
+  }
+  return true;
+}
+
+async function handleHomeExposure(request, sender) {
+  const { visitId, videoId } = request;
+  if (!Number.isInteger(sender.tab?.id) || typeof visitId !== 'string' || !visitId) {
+    return { success: false, error: 'invalid_request' };
+  }
+  if (request.action === 'recordHomeExposure' &&
+      (typeof videoId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(videoId))) {
+    return { success: false, error: 'invalid_request' };
+  }
+
+  const stored = await readStorage([EXPOSURE_HISTORY_KEY, STORAGE_KEYS.ENABLED, STORAGE_KEYS.HOME_ENABLED, STORAGE_KEYS.REPEAT_ENABLED]);
+  const history = stored[EXPOSURE_HISTORY_KEY] || { counts: {}, visits: {} };
+  const tabId = String(sender.tab.id);
+  const documentId = sender.documentId || null;
+  const visit = history.visits[tabId];
+  const sameVisit = visit?.id === visitId && visit.documentId === documentId;
+
+  if (request.action === 'beginHomeVisit') {
+    if (!sameVisit) {
+      history.visits[tabId] = { id: visitId, documentId, seen: [] };
+      await writeStorage({ [EXPOSURE_HISTORY_KEY]: history });
+    }
+    return { success: true, visitId };
+  }
+
+  if (!sameVisit) return { success: false, error: 'stale_visit' };
+  if (request.action === 'endHomeVisit') {
+    delete history.visits[tabId];
+    await writeStorage({ [EXPOSURE_HISTORY_KEY]: history });
+    return { success: true, visitId };
+  }
+  if (stored[STORAGE_KEYS.ENABLED] === false || stored[STORAGE_KEYS.HOME_ENABLED] === false ||
+      stored[STORAGE_KEYS.REPEAT_ENABLED] !== true) {
+    return { success: false, error: 'filter_disabled' };
+  }
+
+  let count = Object.hasOwn(history.counts, videoId) ? history.counts[videoId] : 0;
+  if (!visit.seen.includes(videoId)) {
+    count++;
+    history.counts = { ...history.counts, [videoId]: count };
+    visit.seen.push(videoId);
+    await writeStorage({ [EXPOSURE_HISTORY_KEY]: history });
+  }
+  return { success: true, visitId, count };
+}
+
+function clearHomeVisits(tabId) {
+  runExposureTask(async () => {
+    const stored = await readStorage([EXPOSURE_HISTORY_KEY]);
+    const history = stored[EXPOSURE_HISTORY_KEY];
+    if (!history || (tabId !== undefined && !history.visits[String(tabId)])) return;
+    if (tabId === undefined) history.visits = {};
+    else delete history.visits[String(tabId)];
+    await writeStorage({ [EXPOSURE_HISTORY_KEY]: history });
+  });
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => clearHomeVisits(tabId));
+chrome.runtime.onStartup.addListener(() => clearHomeVisits());
 
 function notifyYouTubeTabs() {
   chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
@@ -56,6 +151,12 @@ chrome.runtime.onInstalled.addListener(() => {
     if (result[STORAGE_KEYS.WATCH_ENABLED] === undefined) {
       chrome.storage.local.set({ [STORAGE_KEYS.WATCH_ENABLED]: true });
     }
+    if (result[STORAGE_KEYS.REPEAT_ENABLED] === undefined) {
+      chrome.storage.local.set({ [STORAGE_KEYS.REPEAT_ENABLED]: false });
+    }
+    if (result[STORAGE_KEYS.REPEAT_THRESHOLD] === undefined) {
+      chrome.storage.local.set({ [STORAGE_KEYS.REPEAT_THRESHOLD]: 3 });
+    }
     if (result[STORAGE_KEYS.LOGGING] === undefined) {
       chrome.storage.local.set({ [STORAGE_KEYS.LOGGING]: false });
     }
@@ -67,7 +168,22 @@ chrome.runtime.onInstalled.addListener(() => {
  * Message listener: Handle messages from popup and content scripts
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'setThreshold') {
+  if (['beginHomeVisit', 'endHomeVisit', 'recordHomeExposure'].includes(request.action)) {
+    return runExposureTask(() => handleHomeExposure(request, sender), sendResponse);
+  } else if (request.action === 'setRepeatFilter') {
+    if (typeof request.enabled !== 'boolean' || !isRepeatThreshold(request.threshold)) {
+      sendResponse({ success: false, error: 'invalid_settings' });
+      return false;
+    }
+    return runExposureTask(async () => {
+      await writeStorage({
+        [STORAGE_KEYS.REPEAT_ENABLED]: request.enabled,
+        [STORAGE_KEYS.REPEAT_THRESHOLD]: request.threshold
+      });
+      notifyYouTubeTabs();
+      return { success: true };
+    }, sendResponse);
+  } else if (request.action === 'setThreshold') {
     console.log('[youtube_skip] Background: Setting threshold to', request.threshold);
     chrome.storage.local.set({ [STORAGE_KEYS.THRESHOLD]: request.threshold }, () => {
       // Notify content scripts to re-evaluate
@@ -107,6 +223,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         enabled: result[STORAGE_KEYS.ENABLED] !== false,
         homeEnabled: result[STORAGE_KEYS.HOME_ENABLED] !== false,
         watchEnabled: result[STORAGE_KEYS.WATCH_ENABLED] !== false,
+        repeatEnabled: result[STORAGE_KEYS.REPEAT_ENABLED] === true,
+        repeatThreshold: isRepeatThreshold(result[STORAGE_KEYS.REPEAT_THRESHOLD]) ? result[STORAGE_KEYS.REPEAT_THRESHOLD] : 3,
         loggingEnabled: result[STORAGE_KEYS.LOGGING] === true
       };
       sendResponse(state);

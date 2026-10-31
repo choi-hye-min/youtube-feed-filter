@@ -2,12 +2,13 @@
 
 Current extension version: **1.7.0**
 
-Automatically mark old YouTube home and watch-page recommendations as "Not interested" based on upload date, then update YouTube's hidden-video message with the upload age and title.
-업로드 날짜를 기준으로 오래된 유튜브 메인 및 시청 페이지 추천 영상을 자동으로 "관심없음" 처리한 뒤, YouTube의 숨김 안내 문구에 업로드 시점과 제목을 표시합니다.
+Automatically mark YouTube recommendations as "Not interested" based on upload age or cumulative appearances on the home feed, then show the reason and video title in YouTube's hidden-video message.
+업로드 날짜 또는 홈 피드의 누적 노출 횟수를 기준으로 추천 영상을 자동으로 "관심없음" 처리하고, YouTube의 숨김 안내 문구에 처리 사유와 제목을 표시합니다.
 
 ### 🛠 최신 개선 사항 (Recent Improvements)
 | 개선 기능 | 상세 내용 |
 | :--- | :--- |
+| **반복 노출 영상 필터** | 홈에서 실제 화면에 보인 영상을 방문당 한 번 집계하고, 사용자가 설정한 누적 N회에 도달하면 관심 없음 처리. 중간 미노출이나 날짜 경과로 횟수를 초기화하지 않음 |
 | **실행 제어 및 대상 검증** | 저장 설정과 로그인 확인 후 시작하며, 중단·페이지 이동 시 대기 작업을 취소하고 실행 직전 영상 ID와 최신 시간 기준을 다시 확인 |
 | **설정 변경 즉시 반영** | 시간 기준 변경 시 미완료 카드를 재평가하고, Debug Logging 변경을 열린 탭에 즉시 반영 |
 | <subSmall>**홈 메뉴 반복 방지**</subSmall> | <subSmall>홈 피드의 `추가 작업` 메뉴에 "관심없음" 항목이 없는 경우 즉시 닫고 같은 카드 재시도를 중단</subSmall> |
@@ -34,6 +35,7 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 ## English
 
 ### 🚀 Key Features
+- **Repeated Home Videos**: Enable the switch beside **Home appearances** and choose the count (default 3, integer ≥ 2). A card counts when at least half is visible in a visible home tab, including while scrolling. Each video counts once per home visit; missing visits and elapsed time never reset its total. The repeat rule defaults to OFF.
 - **Flexible Time Thresholds**: Choose to filter videos older than 1 day, 2 days, 3 days, 4 days, 5 days, 1 week, 2 weeks, 1 month, 3 months, or 6 months.
 - **Automated "Not Interested" Marking**: Automatically clicks the "Not interested" menu for videos that exceed the time threshold.
 - **Home and Watch Recommendations**: Supports both the home feed and the related-video list on `/watch`, using separate page-specific DOM adapters.
@@ -66,6 +68,10 @@ Automatically mark old YouTube home and watch-page recommendations as "Not inter
 6. Optionally enable **"Debug Logging"** to inspect feedback behavior in DevTools.
 7. Confirm the Skipped counter increases only after recommendations are successfully marked as "Not interested" and the hidden-video message shows `[upload age]` plus the video title.
 
+For repeated videos, enable the **Home appearances** switch under **Main Page**, then set its count. Counts are shared across tabs in the same Chrome profile and persist across browser restarts. A reload, a return to home, or a logo-driven home refresh starts a new visit; scrolling, switching tabs, and changing settings do not. Only appearances while the global, Main Page, and repeat switches are enabled and YouTube is signed in are recorded. Stored totals remain when filtering is paused or an action succeeds.
+
+For N = 3, appearances on home visits 1, 2, and 4 trigger the action on visit 4 even if the video was absent on visit 3. Upload age and repeat rules are combined with OR, so an old video may be filtered before reaching N. A repeat result displays `[홈에서 누적 3회 노출]` and the title. Updating N re-evaluates already observed cards without adding an appearance. Counts are local to the Chrome profile, not separated by YouTube account, and are not synced to other devices.
+
 The global **Enable Filtering** switch overrides both page-specific switches. Turning it off stops the active observer, cancels pending work and releases unfinished cards for the next activation. Page navigation also cancels pending work. Feedback already submitted to YouTube cannot be undone by cancellation.
 When YouTube is signed out, filtering controls are paused and the extension shows a sign-in notice instead of attempting feedback actions.
 
@@ -95,6 +101,7 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 ## 한국어
 
 ### 🚀 주요 기능
+- **반복 노출 영상 필터**: **Home appearances** 옆 토글을 켜고 누적 기준 N을 설정합니다(기본 3, 2 이상의 정수). 스크롤을 포함해 표시 중인 홈 탭에서 카드의 절반 이상이 보이면 방문당 한 번 집계합니다. 중간 미노출·시간 경과로 초기화하지 않으며, 반복 필터의 초기 상태는 OFF입니다.
 - **유연한 시간 기준 설정**: 1일, 2일, 3일, 4일, 5일, 1주일, 2주일, 1개월, 3개월, 6개월 중 원하는 필터링 기준을 선택할 수 있습니다.
 - **자동 "관심없음" 처리**: 시간 기준을 초과한 오래된 영상의 "관심없음" 메뉴를 자동으로 클릭합니다.
 - **메인 및 시청 페이지 추천 지원**: 메인 피드와 `/watch` 우측 추천 목록을 지원하며, 페이지별 DOM 처리를 독립된 코드로 관리합니다.
@@ -126,6 +133,10 @@ After that, `git push` is blocked when source, protocol, or spec files change wi
 5. **"Main Page"**와 **"Watch Page"** 토글로 각 페이지의 필터를 독립적으로 설정합니다.
 6. 필요하면 **"Debug Logging"**을 켜서 개발자 도구 콘솔 로그를 확인합니다.
 7. 추천 영상이 성공적으로 "관심없음" 처리된 뒤에만 Skipped 통계가 증가하고, 숨김 안내 문구에 `[업로드 시점]`과 영상 제목이 표시되는지 확인합니다.
+
+반복 영상은 **Main Page** 아래의 **Home appearances** 토글을 켜고 N을 설정합니다. 누적 횟수는 같은 Chrome 프로필의 탭들이 공유하며 브라우저 재시작 후에도 유지됩니다. 새로고침·다른 페이지에서 홈 복귀·로고를 통한 홈 갱신은 새 방문이고, 스크롤·탭 전환·설정 변경은 새 방문이 아닙니다. 전체·Main Page·반복 필터가 모두 켜지고 YouTube에 로그인한 동안의 노출만 기록하며, 필터 중단이나 관심 없음 처리 성공으로 누적값을 지우지 않습니다.
+
+N이 3이면 1·2·4번째 방문에 노출된 영상은 3번째 방문에서 보이지 않았어도 4번째 방문에 처리합니다. 업로드 기간 조건과 반복 조건 중 하나를 만족하면 처리하므로 오래된 영상은 N회 이전에도 처리될 수 있습니다. 반복 사유는 `[홈에서 누적 3회 노출]`과 제목으로 표시합니다. N 변경은 현재 방문에서 노출된 카드를 재평가하며 횟수를 추가하지 않습니다. 이력은 Chrome 프로필 기준으로 저장되며 YouTube 계정별 분리나 기기 간 동기화는 지원하지 않습니다.
 
 상위 **Enable Filtering**을 끄면 페이지별 설정과 관계없이 observer와 대기 작업을 취소하고 미완료 카드의 대기 표식을 해제합니다. 페이지 이동 시에도 대기 작업을 취소합니다. 이미 YouTube에 제출한 feedback은 취소로 되돌릴 수 없습니다.
 YouTube 미로그인 상태에서는 feedback 작업을 시도하지 않고 로그인 안내를 표시합니다.
@@ -162,7 +173,7 @@ node tools/check-extension.cjs
 node --test tests/automated/*.test.cjs
 ```
 
-The regression tests cover initialization, settings changes, cancellation, recycled cards, feedback selection, and hidden-result confirmation using DOM fixtures. Run the browser scenarios in `tests/manual/` against English and Korean YouTube as well. GitHub Actions runs the checks for pushes, pull requests, and releases. Release tags must match the manifest version, for example `release-v1.7.0`.
+The regression tests cover initialization, settings changes, cancellation, recycled cards, feedback selection, hidden-result confirmation, visible home exposures, cumulative storage, worker restarts, and popup controls using DOM fixtures. Run the browser scenarios in `tests/manual/` against English and Korean YouTube as well. GitHub Actions runs the checks for pushes, pull requests, and releases. Release tags must match the manifest version, for example `release-v1.7.0`.
 
 검증은 초기화·설정 변경·취소·DOM 재사용·명령 선택·숨김 결과 확인을 포함합니다. 실제 YouTube DOM 변경 여부는 `tests/manual/` 절차로 추가 확인합니다.
 

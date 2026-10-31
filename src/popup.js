@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const enableFilter = document.getElementById('enable-filter');
   const enableHomeFilter = document.getElementById('enable-home-filter');
   const enableWatchFilter = document.getElementById('enable-watch-filter');
+  const enableRepeatFilter = document.getElementById('enable-repeat-filter');
+  const repeatThreshold = document.getElementById('repeat-threshold');
+  const repeatControls = document.getElementById('repeat-filter-controls');
+  const repeatError = document.getElementById('repeat-filter-error');
   const pageToggleGroup = document.querySelector('.page-toggle-group');
   const controlsPanel = document.querySelector('.controls-panel');
   const enableLogging = document.getElementById('enable-logging');
@@ -18,6 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const detectedCountSpan = document.getElementById('detected-count');
   const skippedCountSpan = document.getElementById('skipped-count');
   let authState = 'unknown';
+  let savedRepeat = { enabled: false, threshold: 3 };
+  let savingRepeat = false;
   const thresholdLabels = {
     '1day': '1 Day',
     '2days': '2 Days',
@@ -37,6 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
     'filter_enabled',
     'home_filter_enabled',
     'watch_filter_enabled',
+    'repeat_filter_enabled',
+    'repeat_exposure_threshold',
     'logging_enabled'
   ], (result) => {
     const savedThreshold = result.filter_threshold || '1month';
@@ -44,12 +52,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedHomeEnabled = result.home_filter_enabled !== false;
     const savedWatchEnabled = result.watch_filter_enabled !== false;
     const savedLogging = result.logging_enabled === true;
+    savedRepeat = {
+      enabled: result.repeat_filter_enabled === true,
+      threshold: Number.isSafeInteger(result.repeat_exposure_threshold) && result.repeat_exposure_threshold >= 2
+        ? result.repeat_exposure_threshold : 3
+    };
     
     // Restore UI state
     thresholdSelect.value = savedThreshold;
     enableFilter.checked = savedEnabled;
     enableHomeFilter.checked = savedHomeEnabled;
     enableWatchFilter.checked = savedWatchEnabled;
+    enableRepeatFilter.checked = savedRepeat.enabled;
+    repeatThreshold.value = String(savedRepeat.threshold);
     enableLogging.checked = savedLogging;
     
     updateStatus(savedThreshold, savedEnabled, savedHomeEnabled, savedWatchEnabled);
@@ -152,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
             enableHomeFilter.checked,
             enableWatchFilter.checked
           );
+          updateControlAvailability(enableFilter.checked);
         });
       }
     });
@@ -164,6 +180,39 @@ document.addEventListener('DOMContentLoaded', () => {
   enableWatchFilter.addEventListener('change', (event) => {
     handlePageToggle('watch', event.target.checked);
   });
+
+  function saveRepeatSettings() {
+    if (savingRepeat) return;
+    const enabled = enableRepeatFilter.checked;
+    const threshold = enabled ? Number(repeatThreshold.value) : savedRepeat.threshold;
+    if (!Number.isSafeInteger(threshold) || threshold < 2) {
+      repeatThreshold.setAttribute('aria-invalid', 'true');
+      repeatError.textContent = 'Enter a whole number of 2 or more.';
+      repeatError.hidden = false;
+      return;
+    }
+
+    repeatThreshold.removeAttribute('aria-invalid');
+    repeatError.hidden = true;
+    savingRepeat = true;
+    updateControlAvailability(enableFilter.checked);
+    chrome.runtime.sendMessage({ action: 'setRepeatFilter', enabled, threshold }, (response) => {
+      savingRepeat = false;
+      if (chrome.runtime.lastError || !response?.success) {
+        repeatError.textContent = 'Could not save. Previous settings restored.';
+        repeatError.hidden = false;
+      } else {
+        savedRepeat = { enabled, threshold };
+      }
+      enableRepeatFilter.checked = savedRepeat.enabled;
+      repeatThreshold.value = String(savedRepeat.threshold);
+      updateControlAvailability(enableFilter.checked);
+      updateStatus(thresholdSelect.value, enableFilter.checked, enableHomeFilter.checked, enableWatchFilter.checked);
+    });
+  }
+
+  enableRepeatFilter.addEventListener('change', saveRepeatSettings);
+  repeatThreshold.addEventListener('change', saveRepeatSettings);
 
   // Logging toggle handler
   enableLogging.addEventListener('change', (e) => {
@@ -185,6 +234,10 @@ document.addEventListener('DOMContentLoaded', () => {
     pageToggleGroup.classList.toggle('is-disabled', !enabled || requiresSignIn);
     enableHomeFilter.disabled = !enabled || requiresSignIn;
     enableWatchFilter.disabled = !enabled || requiresSignIn;
+    const repeatUnavailable = !enabled || !enableHomeFilter.checked || requiresSignIn;
+    repeatControls.classList.toggle('is-disabled', repeatUnavailable);
+    enableRepeatFilter.disabled = repeatUnavailable || savingRepeat;
+    repeatThreshold.disabled = repeatUnavailable || savingRepeat || !enableRepeatFilter.checked;
   }
 
   function updateStatus(threshold, enabled, homeEnabled, watchEnabled) {
@@ -200,7 +253,8 @@ document.addEventListener('DOMContentLoaded', () => {
       statusDiv.textContent = 'Filter Inactive';
     } else {
       const thresholdLabel = thresholdLabels[threshold] || threshold;
-      statusDiv.textContent = `${activePages.join(' + ')} · ${thresholdLabel}+`;
+      const repeatLabel = homeEnabled && savedRepeat.enabled ? ` · Home repeats ${savedRepeat.threshold}+` : '';
+      statusDiv.textContent = `${activePages.join(' + ')} · ${thresholdLabel}+${repeatLabel}`;
     }
   }
 });

@@ -58,7 +58,7 @@
                 <div id="filter-toggle" class="toggle-row">
                     <div class="toggle-copy">
                         <span class="toggle-title">Enable Filtering</span>
-                        <span class="toggle-subtitle">Mark videos older than your chosen threshold.</span>
+                        <span class="toggle-subtitle">Apply your upload-age and home-repeat rules.</span>
                     </div>
                     <label class="switch" for="enable-filter" aria-label="Enable Filtering">
                         <input type="checkbox" id="enable-filter" checked>
@@ -76,6 +76,19 @@
                             <input type="checkbox" id="enable-home-filter" checked>
                             <span class="switch-ui"></span>
                         </label>
+                    </div>
+
+                    <div id="repeat-filter-controls" class="repeat-controls">
+                        <div class="repeat-threshold-row">
+                            <label for="repeat-threshold">Home appearances</label>
+                            <input type="number" id="repeat-threshold" min="2" max="9007199254740991" step="1" value="3" aria-describedby="repeat-filter-help repeat-filter-error" disabled>
+                            <label class="switch" for="enable-repeat-filter" aria-label="Enable Repeated Home Video Filtering">
+                                <input type="checkbox" id="enable-repeat-filter" disabled>
+                                <span class="switch-ui"></span>
+                            </label>
+                        </div>
+                        <p id="repeat-filter-help" class="repeat-help">Once per home visit, across tabs. Counts never reset.</p>
+                        <p id="repeat-filter-error" class="repeat-error" role="status" hidden></p>
                     </div>
 
                     <div id="watch-filter-toggle" class="toggle-row page-toggle-row">

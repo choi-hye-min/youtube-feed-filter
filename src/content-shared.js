@@ -311,7 +311,7 @@
               : null;
             success = Boolean(hiddenResult);
             actionMethod = result.method;
-            if (!success && ['missing_not_interested', 'cancelled', 'stale_page', 'stale_target'].includes(actionMethod)) break;
+            if (!success && actionMethod !== 'action_busy') break;
             if (!success) await new Promise((resolve) => setTimeout(resolve, 500));
           }
 
@@ -328,7 +328,7 @@
           } else if (getVideoId(item.element) === item.videoId) {
             if (actionMethod && !['menu_busy', 'action_busy', 'cancelled', 'stale_page', 'stale_target'].includes(actionMethod)) {
               item.element.setAttribute(attribute('processed'), 'failed');
-              debugLog('Failed after retries', item.videoId);
+              debugLog('Action failed', item.videoId);
             } else {
               item.element.removeAttribute(attribute('processed'));
             }

@@ -277,9 +277,15 @@ Content and MAIN world scripts communicate through window `CustomEvent`s:
 { videoId: 'yt-skip-home-request-id', success: true, method: 'api' }
 ```
 
-Only one MAIN world action may run at a time; overlapping requests return `action_busy`. The URL and target video ID are checked before execution and after asynchronous waits. Cancellation and page navigation stop pending waits and UI clicks and restore temporary focus/scroll overrides. An already submitted feedback request cannot be undone by cancellation.
+Only one MAIN world action may run at a time; overlapping requests return `action_busy`. The URL and target video ID are checked before execution and after asynchronous waits. Cancellation and page navigation stop pending waits. An already submitted feedback request cannot be undone by cancellation.
 
-Success (`method: 'api'` or `'ui'`) requires a new visible `.ytDismissibleItemReplacedContent` belonging to the target card or its replacement. The confirmed result receives `data-youtube-skip-result-id` with the request ID; only that result receives its reason and title. The reason is the upload age or `[홈에서 누적 N회 노출]` for repeat filtering. If both conditions qualify when the action executes, the repeat reason takes precedence. This confirms YouTube's page result, not server-side persistence. Failures include `cancelled`, `stale_page`, `stale_target`, `action_busy`, `menu_busy`, and `result_timeout`.
+Execution requires an explicitly identified "Not interested" feedback command and a callable YouTube `resolveCommand` or `resolve` method. Missing capabilities return `missing_command` or `missing_resolver`; the card remains visible. There is no UI fallback: the extension does not open menus, click menu items, or dispatch Escape. If a user menu is already open, `menu_busy` defers feedback without changing that menu. These resolvers are YouTube internals, not a public API contract.
+
+The extension suppresses `focus`, `scrollIntoView`, `window.scrollTo`, and `window.scrollBy` only during the synchronous resolver call, then restores the methods in `finally` before waiting for its result. It does not restore saved scroll coordinates or focus after the wait. Later asynchronous YouTube behavior and layout changes are outside this protection and require browser verification.
+
+Success (`method: 'api'`) requires a new visible `.ytDismissibleItemReplacedContent` belonging to the target card or its replacement. The confirmed result receives `data-youtube-skip-result-id` with the request ID; only that result receives its reason and title. The reason is the upload age or `[홈에서 누적 N회 노출]` for repeat filtering. If both conditions qualify when the action executes, the repeat reason takes precedence. This confirms YouTube's page result, not server-side persistence. Failures include `missing_command`, `missing_resolver`, `command_failed`, `result_timeout`, `cancelled`, `stale_page`, `stale_target`, `action_busy`, and `menu_busy`. A missing MAIN-world response is reported as `timeout` by the shared runtime.
+
+Only `action_busy` is retried immediately, up to the queue's three-attempt limit. `menu_busy` releases the pending marker for a later scan; cancellation and stale page/target failures also release unfinished work. Command, result, and response-timeout failures prevent resubmission while the failed marker remains on the same card element for the same video. Runtime restart or card replacement can re-evaluate the video. Failed actions do not increment Skipped.
 
 ## Storage Keys
 

@@ -70,6 +70,7 @@ function harness(withShared = false) {
       if (selector.includes('a[href*="/watch?v="]')) return this.kind === 'link';
       if (selector.includes('yt-list-item-view-model')) return this.kind === 'item';
       if (selector.includes('ytd-menu-popup-renderer')) return this.kind === 'popup';
+      if (selector === '#content') return this.getAttribute('id') === 'content';
       if (selector.includes('yt-lockup-view-model')) return this.kind === 'card';
       if (selector.includes('button')) return this.kind === 'button';
       return false;
@@ -82,10 +83,15 @@ function harness(withShared = false) {
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
     contains(element) { return element === this || this.children.some((child) => child.contains(element)); }
     closest(selector) { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; }
-    scrollIntoView() {}
+    scrollIntoView() { window.scrollTo(0, 1000); }
     click() { this.onClick?.(); }
   }
-  class HTMLElement extends Element { focus() {} }
+  class HTMLElement extends Element {
+    focus(options) {
+      document.activeElement = this;
+      if (!options?.preventScroll) this.scrollIntoView();
+    }
+  }
   const node = (kind) => new HTMLElement(kind);
   const body = node('body');
   body.root = true;
@@ -97,6 +103,7 @@ function harness(withShared = false) {
   let resolveCommand = () => {};
   const app = { resolveCommand(command) { commands.push(command); return resolveCommand(command); } };
   const document = events({
+    activeElement: body,
     querySelector(selector) {
       if (selector === 'ytd-app') return app;
       return body.querySelector(selector);
@@ -106,13 +113,14 @@ function harness(withShared = false) {
   const window = events({
     location: { href: 'https://www.youtube.com/', pathname: '/', origin: 'https://www.youtube.com' },
     scrollX: 0, scrollY: 200,
-    scrollTo: (...args) => scrolls.push(args), scrollBy() {}
+    scrollTo(x, y) { scrolls.push([x, y]); this.scrollX = x; this.scrollY = y; },
+    scrollBy(x, y) { this.scrollTo(this.scrollX + x, this.scrollY + y); }
   });
   const originals = { focus: HTMLElement.prototype.focus, scrollIntoView: Element.prototype.scrollIntoView,
     scrollTo: window.scrollTo, scrollBy: window.scrollBy };
   class Event { constructor(type, init) { this.type = type; Object.assign(this, init); } }
   const context = vm.createContext({
-    window, document, Element, HTMLElement, URL, AbortController, CustomEvent: Event, KeyboardEvent: Event,
+    window, document, Element, HTMLElement, URL, AbortController, CustomEvent: Event,
     chrome: { runtime: { sendMessage() {} } },
     console: { log() {}, error: (...args) => errors.push(args) },
     setTimeout(callback, ms) { const id = ++nextTimer; timers.set(id, { time: now + ms, callback }); return id; },
@@ -149,11 +157,14 @@ function harness(withShared = false) {
   function cancel(videoId = 'request-1') {
     window.dispatchEvent(new Event('youtube-skip-cancel', { detail: { videoId } }));
   }
-  function assertRestored() {
+  function assertMethodsRestored() {
     assert.equal(HTMLElement.prototype.focus, originals.focus);
     assert.equal(Element.prototype.scrollIntoView, originals.scrollIntoView);
     assert.equal(window.scrollTo, originals.scrollTo);
     assert.equal(window.scrollBy, originals.scrollBy);
+  }
+  function assertRestored() {
+    assertMethodsRestored();
     assert.equal(timers.size, 0);
   }
   function ui(onFeedback = () => {}) {
@@ -164,9 +175,10 @@ function harness(withShared = false) {
     const item = popup.append(node('item'));
     item.textContent = 'Not interested';
     let clicks = 0;
-    button.onClick = () => { popup.visible = true; };
+    let menuClicks = 0;
+    button.onClick = () => { menuClicks++; popup.visible = true; };
     item.onClick = () => { clicks++; onFeedback(); popup.visible = false; };
-    return { popup, item, clicks: () => clicks };
+    return { popup, item, clicks: () => clicks, menuClicks: () => menuClicks };
   }
   function createRuntime() {
     card.setAttribute('aria-label', '2 weeks ago');
@@ -178,8 +190,9 @@ function harness(withShared = false) {
       extractTitle: () => 'Target video', getActionDelay: () => 0
     }, { enabled: true, homeEnabled: true, threshold: '1week' });
   }
-  return { node, body, parent, card, link, document, window, responses, commands, errors, scrolls,
-    request, cancel, advance, assertRestored, ui, createRuntime, setResolver: (resolver) => { resolveCommand = resolver; } };
+  return { node, body, parent, card, link, document, window, app, responses, commands, errors, scrolls,
+    request, cancel, advance, assertRestored, assertMethodsRestored, ui, createRuntime,
+    setResolver: (resolver) => { resolveCommand = resolver; } };
 }
 
 test('resolves a labeled feedback command and confirms the target hidden result', async () => {
@@ -211,16 +224,125 @@ test('extracts the command from the current list-item renderer context', async (
   h.assertRestored();
 });
 
-test('label-only and icon-only data fall back to the UI instead of invoking a renderer object', async () => {
-  for (const data of [{ title: { content: 'Not interested' } }, { icon: { iconType: 'NOT_INTERESTED' } }]) {
+test('keeps looking through existing data sources when outer card data has no command', async () => {
+  for (const attach of [
+    (h) => { h.card.__data = { data: menuData() }; },
+    (h) => { h.card.__data = menuData(); },
+    (h) => { h.card.append(h.node('card')).data = menuData(); },
+    (h) => { h.card.append(h.node('card')).__data = { data: menuData() }; },
+    (h) => {
+      const content = h.card.append(h.node('content'));
+      content.setAttribute('id', 'content');
+      content.data = menuData();
+    }
+  ]) {
+    const h = harness();
+    h.card.data = { title: 'Outer metadata only' };
+    attach(h);
+    h.setResolver(() => h.card.append(h.node('result')));
+    h.request();
+    await h.advance();
+    assert.equal(h.commands[0], feedback);
+    assert.equal(h.responses[0].success, true);
+    h.assertRestored();
+  }
+});
+
+test('missing or non-callable resolvers never fall back to menu clicks', async () => {
+  for (const resolver of [undefined, null, {}]) {
+    const h = harness();
+    const ui = h.ui();
+    h.card.data = menuData();
+    h.app.resolveCommand = resolver;
+    h.app.resolve = resolver;
+    h.request();
+    await h.advance();
+    assert.equal(h.responses[0].method, 'missing_resolver');
+    assert.equal(h.responses[0].success, false);
+    assert.equal(ui.menuClicks(), 0);
+    assert.equal(ui.clicks(), 0);
+    assert.equal(ui.popup.visible, false);
+    h.assertRestored();
+  }
+});
+
+test('uses the callable resolve alternative when resolveCommand is unavailable', async () => {
+  const h = harness();
+  h.app.resolveCommand = {};
+  h.app.resolve = function(command) {
+    assert.equal(this, h.app);
+    assert.equal(command, feedback);
+    h.card.append(h.node('result'));
+  };
+  h.request();
+  await h.advance();
+  assert.equal(h.responses[0].success, true);
+  h.assertRestored();
+});
+
+test('command execution preserves focus and scroll on both home and watch', async () => {
+  for (const page of ['home', 'watch']) {
+    const h = harness();
+    if (page === 'watch') {
+      h.window.location.pathname = '/watch';
+      h.window.location.href = 'https://www.youtube.com/watch?v=playing';
+    }
+    const input = h.body.append(h.node('input'));
+    input.focus({ preventScroll: true });
+    h.setResolver(() => {
+      h.card.focus();
+      h.card.scrollIntoView();
+      h.window.scrollTo(0, 500);
+      h.window.scrollBy(0, 300);
+      h.card.append(h.node('result'));
+    });
+    h.request();
+    h.assertMethodsRestored();
+    await h.advance();
+    assert.equal(h.responses[0].success, true);
+    assert.equal(h.document.activeElement, input);
+    assert.equal(h.window.scrollY, 200);
+    assert.deepEqual(h.scrolls, []);
+    h.assertRestored();
+  }
+});
+
+test('waiting and finishing never overwrite the users latest focus or scroll position', async () => {
+  for (const outcome of ['success', 'result_timeout', 'cancelled', 'stale_page']) {
+    const h = harness();
+    h.request();
+    h.assertMethodsRestored();
+    const input = h.body.append(h.node('input'));
+    input.focus({ preventScroll: true });
+    h.window.scrollTo(0, 650);
+    h.window.scrollBy(0, 50);
+    if (outcome === 'success') h.card.append(h.node('result'));
+    if (outcome === 'cancelled') h.cancel();
+    if (outcome === 'stale_page') h.document.dispatchEvent({ type: 'yt-navigate-start' });
+    await h.advance();
+    assert.equal(h.responses[0].success, outcome === 'success');
+    assert.equal(h.responses[0].method, outcome === 'success' ? 'api' : outcome);
+    assert.equal(h.document.activeElement, input);
+    assert.equal(h.window.scrollY, 700);
+    assert.deepEqual(h.scrolls, [[0, 650], [0, 700]]);
+    h.assertRestored();
+  }
+});
+
+test('missing, label-only and icon-only commands leave the card and menus untouched', async () => {
+  for (const data of [null, { title: { content: 'Not interested' } }, { icon: { iconType: 'NOT_INTERESTED' } }]) {
     const h = harness();
     const ui = h.ui(() => h.card.append(h.node('result')));
     h.card.data = data;
     h.request();
     await h.advance();
     assert.equal(h.commands.length, 0);
-    assert.equal(ui.clicks(), 1);
-    assert.equal(h.responses[0].success, true);
+    assert.equal(ui.menuClicks(), 0);
+    assert.equal(ui.clicks(), 0);
+    assert.equal(ui.popup.visible, false);
+    assert.equal(h.responses[0].success, false);
+    assert.equal(h.responses[0].method, 'missing_command');
+    assert.equal(h.card.querySelector('.ytDismissibleItemReplacedContent'), null);
     h.assertRestored();
   }
 });
@@ -249,7 +371,7 @@ test('rejects stale request URLs and target IDs before invoking a command', asyn
   }
 });
 
-test('a resolver call without a hidden result fails and remains retryable', async () => {
+test('a resolver call without a hidden result fails and releases the action lock', async () => {
   const h = harness();
   h.request();
   await h.advance();
@@ -274,27 +396,25 @@ test('rejects an overlapping action and restores global methods after cancellati
   h.assertRestored();
 });
 
-test('cancellation while a menu is opening prevents the feedback click', async () => {
+test('cancellation while waiting for a command result does not confirm success', async () => {
   const h = harness();
-  const ui = h.ui();
   h.request();
   h.cancel();
   await h.advance();
-  assert.equal(ui.clicks(), 0);
-  assert.equal(ui.popup.visible, false);
+  assert.equal(h.commands.length, 1);
+  assert.equal(h.responses[0].success, false);
   assert.equal(h.responses[0].method, 'cancelled');
   h.assertRestored();
 });
 
-test('same-path watch navigation cancels a pending menu before clicking', async () => {
+test('same-path watch navigation stops waiting for the old command result', async () => {
   const h = harness();
   h.window.location.pathname = '/watch';
   h.window.location.href = 'https://www.youtube.com/watch?v=first';
-  const ui = h.ui();
   h.request();
   h.window.location.href = 'https://www.youtube.com/watch?v=second';
   await h.advance();
-  assert.equal(ui.clicks(), 0);
+  assert.equal(h.commands.length, 1);
   assert.equal(h.responses[0].method, 'stale_page');
   assert.equal(h.scrolls.length, 0);
   h.assertRestored();
@@ -302,22 +422,20 @@ test('same-path watch navigation cancels a pending menu before clicking', async 
 
 test('navigation start cancels pending work even before the URL changes', async () => {
   const h = harness();
-  const ui = h.ui();
   h.request();
   h.document.dispatchEvent({ type: 'yt-navigate-start' });
   await h.advance();
-  assert.equal(ui.clicks(), 0);
+  assert.equal(h.commands.length, 1);
   assert.equal(h.responses[0].method, 'stale_page');
   h.assertRestored();
 });
 
-test('rejects a reused card before clicking its pending menu', async () => {
+test('rejects a reused card while waiting for the original command result', async () => {
   const h = harness();
-  const ui = h.ui();
   h.request();
   h.link.href = 'https://www.youtube.com/watch?v=replacement';
   await h.advance();
-  assert.equal(ui.clicks(), 0);
+  assert.equal(h.commands.length, 1);
   assert.equal(h.responses[0].method, 'stale_target');
   h.assertRestored();
 });
@@ -392,35 +510,14 @@ test('does not use an adjacent card result when the hidden target has no result 
 test('leaves an already-open user menu untouched', async () => {
   const h = harness();
   const ui = h.ui();
+  h.card.data = menuData();
   ui.popup.visible = true;
   h.request();
   await h.advance();
   assert.equal(h.responses[0].method, 'menu_busy');
+  assert.equal(h.commands.length, 0);
   assert.equal(ui.clicks(), 0);
   assert.equal(ui.popup.visible, true);
-  h.assertRestored();
-});
-
-test('a UI click also requires a visible target result', async () => {
-  const h = harness();
-  const ui = h.ui();
-  h.request();
-  await h.advance();
-  assert.equal(ui.clicks(), 1);
-  assert.equal(h.responses[0].method, 'result_timeout');
-  assert.equal(h.responses[0].success, false);
-  h.assertRestored();
-});
-
-test('UI feedback marks the confirmed result with its request ID', async () => {
-  const h = harness();
-  let result;
-  h.ui(() => { result = h.card.append(h.node('result')); });
-  h.request();
-  await h.advance();
-  assert.equal(h.responses[0].success, true);
-  assert.equal(h.responses[0].method, 'ui');
-  assert.equal(result.getAttribute('data-youtube-skip-result-id'), 'request-1');
   h.assertRestored();
 });
 
@@ -431,6 +528,7 @@ test('resolver failures restore patches without leaving an unhandled rejection',
     h.request();
     await h.advance();
     assert.equal(h.responses[0].success, false);
+    assert.equal(h.responses[0].method, 'command_failed');
     h.assertRestored();
   }
 });
@@ -451,15 +549,29 @@ test('shared runtime and MAIN world confirm one skipped card and annotate its re
   h.assertRestored();
 });
 
-test('shared runtime stop cancels the real MAIN-world menu wait without counting a skip', async () => {
+test('shared runtime never resubmits an unconfirmed or rejected command automatically', async () => {
+  for (const resolver of [() => {}, () => Promise.reject(new Error('rejected'))]) {
+    const h = harness(true);
+    h.setResolver(resolver);
+    const runtime = h.createRuntime();
+    runtime.apply();
+    await h.advance(10000);
+    runtime.apply();
+    await h.advance();
+    assert.equal(h.commands.length, 1);
+    assert.equal(h.window.YouTubeSkipShared.getStats().skipped, 0);
+    assert.equal(h.card.getAttribute('data-youtube-skip-home-processed'), 'failed');
+    h.assertRestored();
+  }
+});
+
+test('shared runtime stop cancels the MAIN-world result wait without counting a skip', async () => {
   const h = harness(true);
-  const ui = h.ui(() => h.card.append(h.node('result')));
   const runtime = h.createRuntime();
   runtime.apply();
   runtime.stop();
   await h.advance();
-  assert.equal(ui.clicks(), 0);
-  assert.equal(ui.popup.visible, false);
+  assert.equal(h.commands.length, 1);
   assert.equal(h.responses[0].method, 'cancelled');
   assert.equal(h.window.YouTubeSkipShared.getStats().skipped, 0);
   assert.equal(h.card.getAttribute('data-youtube-skip-home-processed'), null);

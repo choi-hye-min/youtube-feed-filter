@@ -95,7 +95,7 @@ function harness(cards, { repeat = false, counts = {}, page = 'home' } = {}) {
     }
     now = until;
   }
-  function respond(action, { success = false, method = 'missing_not_interested', hidden = false } = {}) {
+  function respond(action, { success = false, method = 'missing_command', hidden = false } = {}) {
     let result;
     if (hidden) {
       result = { querySelectorAll: () => [], setAttribute(name, value) { this[name] = value; } };
@@ -135,6 +135,83 @@ test('queued cards are checked against the latest threshold before executing', a
   h.respond(h.actions[0]);
   await h.flush();
   assert.equal(h.actions.length, 1);
+});
+
+for (const method of ['missing_command', 'missing_resolver', 'command_failed', 'result_timeout', 'error']) {
+  test(`terminal ${method} failure advances the queue without retrying on later scans`, async () => {
+    const first = card('first', 14);
+    const h = harness([first, card('next', 14)]);
+    h.runtime.apply();
+    h.respond(h.actions[0], { method });
+    await h.flush();
+    assert.deepEqual(h.actions.map(action => action.targetVideoId), ['first', 'next']);
+    assert.equal(first.getAttribute(processed), 'failed');
+    assert.equal(h.stats().skipped, 0);
+    h.respond(h.actions[1], { success: true, method: 'api', hidden: true });
+    await h.flush();
+    h.runtime.apply();
+    await h.advance(10000);
+    h.runtime.apply();
+    assert.equal(h.actions.length, 2);
+    assert.equal(h.stats().skipped, 1);
+  });
+}
+
+test('a timed out request is cancelled once and advances the queue without retrying', async () => {
+  const first = card('first', 14);
+  const h = harness([first, card('next', 14)]);
+  h.runtime.apply();
+  await h.advance(7999);
+  assert.equal(h.actions.length, 1);
+  assert.equal(h.cancellations.length, 0);
+  await h.advance(1);
+  assert.deepEqual(h.actions.map(action => action.targetVideoId), ['first', 'next']);
+  assert.equal(h.cancellations.length, 1);
+  assert.equal(h.cancellations[0].videoId, h.actions[0].videoId);
+  assert.equal(first.getAttribute(processed), 'failed');
+  assert.equal(h.stats().skipped, 0);
+  h.respond(h.actions[1], { success: true, method: 'api', hidden: true });
+  await h.advance(10000);
+  h.runtime.apply();
+  assert.equal(h.actions.length, 2);
+  assert.equal(h.cancellations.length, 1);
+  assert.equal(h.stats().skipped, 1);
+});
+
+test('a busy action is retried after 500ms and counts only its confirmed result', async () => {
+  const target = card('old', 14);
+  const h = harness([target]);
+  h.runtime.apply();
+  h.respond(h.actions[0], { method: 'action_busy' });
+  await h.advance(499);
+  assert.equal(h.actions.length, 1);
+  assert.equal(h.stats().skipped, 0);
+  await h.advance(1);
+  assert.equal(h.actions.length, 2);
+  assert.equal(h.actions[1].targetVideoId, 'old');
+  h.respond(h.actions[1], { success: true, method: 'api', hidden: true });
+  await h.advance(10000);
+  h.runtime.apply();
+  assert.equal(h.actions.length, 2);
+  assert.equal(target.getAttribute(processed), 'done');
+  assert.equal(h.stats().skipped, 1);
+});
+
+test('an open user menu defers the card until a later scan without immediate retries', async () => {
+  const target = card('old', 14);
+  const h = harness([target]);
+  h.runtime.apply();
+  h.respond(h.actions[0], { method: 'menu_busy' });
+  await h.advance(10000);
+  assert.equal(h.actions.length, 1);
+  assert.equal(target.getAttribute(processed), null);
+  assert.equal(h.stats().skipped, 0);
+  h.runtime.apply();
+  assert.equal(h.actions.length, 2);
+  h.respond(h.actions[1], { success: true, method: 'api', hidden: true });
+  await h.flush();
+  assert.equal(target.getAttribute(processed), 'done');
+  assert.equal(h.stats().skipped, 1);
 });
 
 test('stop cancels the pending request and prevents retries and delayed applies', async () => {
@@ -226,13 +303,18 @@ test('only a tagged hidden result increments skipped and receives the reason', a
   assert.equal(h.actions.length, 2, 'A refreshed home feed can reuse a previously completed card');
 });
 
-test('an unconfirmed success response does not count as skipped', async () => {
-  const h = harness([card('old', 14)]);
+test('an unconfirmed success response is not retried or counted as skipped', async () => {
+  const target = card('old', 14);
+  const h = harness([target]);
   h.runtime.apply();
   h.respond(h.actions[0], { success: true, method: 'api' });
   await h.flush();
   assert.equal(h.stats().skipped, 0);
-  h.runtime.stop();
+  assert.equal(target.getAttribute(processed), 'failed');
+  await h.advance(10000);
+  h.runtime.apply();
+  assert.equal(h.actions.length, 1);
+  assert.equal(h.stats().skipped, 0);
 });
 
 test('a stale target response releases the card for a later scan', async () => {

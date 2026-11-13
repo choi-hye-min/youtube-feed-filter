@@ -70,41 +70,26 @@
     return null;
   }
 
-  function suppressActionScrolling(videoElement, shouldRestorePosition) {
+  function resolveWithoutMovingPage(app, resolver, command) {
     const originalFocus = HTMLElement.prototype.focus;
     const originalScrollIntoView = Element.prototype.scrollIntoView;
     const originalScrollTo = window.scrollTo;
     const originalScrollBy = window.scrollBy;
-    const savedX = window.scrollX;
-    const savedY = window.scrollY;
 
-    HTMLElement.prototype.focus = function(options) {
-      return originalFocus.call(this, { ...(options || {}), preventScroll: true });
-    };
-    Element.prototype.scrollIntoView = function(options) {
-      const isTargetCard = this === videoElement || videoElement.contains(this);
-      const isMenuPopup = this.closest?.(
-        'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model'
-      );
-      if (isTargetCard || isMenuPopup) return;
-      return originalScrollIntoView.call(this, options);
-    };
-    window.scrollTo = function(...args) {
-      if (shouldRestorePosition) return;
-      return originalScrollTo.apply(this, args);
-    };
-    window.scrollBy = function(...args) {
-      if (shouldRestorePosition) return;
-      return originalScrollBy.apply(this, args);
-    };
-
-    return (restorePosition = true) => {
+    // Limit suppression to this synchronous command call. User input and later
+    // page work must retain their normal focus and scrolling behavior.
+    HTMLElement.prototype.focus = function() {};
+    Element.prototype.scrollIntoView = function() {};
+    window.scrollTo = function() {};
+    window.scrollBy = function() {};
+    try {
+      return resolver.call(app, command);
+    } finally {
       HTMLElement.prototype.focus = originalFocus;
       Element.prototype.scrollIntoView = originalScrollIntoView;
       window.scrollTo = originalScrollTo;
       window.scrollBy = originalScrollBy;
-      if (shouldRestorePosition && restorePosition) originalScrollTo.call(window, savedX, savedY);
-    };
+    }
   }
 
   function actionFailure(method) {
@@ -171,112 +156,6 @@
     throw actionFailure('result_timeout');
   }
 
-  /**
-   * Helper: Click the actual "Not interested" button in the UI
-   */
-  async function clickNotInterestedUI(action, pageType, debugLog) {
-    const videoElement = action.element;
-
-    const homeSelectors = [
-        '.ytLockupMetadataViewModelMenuButton button[aria-label="추가 작업"]',
-        'button[aria-label*="메뉴"]', 
-        'button[aria-label*="menu"]', 
-        'button[aria-label*="Action"]',
-        'yt-icon-button#button', 
-        '.dropdown-trigger', 
-        '#menu button', 
-        'yt-icon-button.ytd-menu-renderer',
-        '.yt-button-view-model button',
-        'yt-button-shape button',
-        'ytd-menu-renderer button'
-    ];
-    const watchSelectors = [
-        '.ytLockupMetadataViewModelMenuButton button[aria-label="추가 작업"]',
-        '.ytLockupMetadataViewModelMenuButton button',
-        'yt-lockup-metadata-view-model button[aria-label*="추가"]',
-        'yt-lockup-metadata-view-model button[aria-label*="작업"]',
-        'yt-lockup-metadata-view-model button[aria-label*="Action"]',
-        'yt-lockup-metadata-view-model button[aria-label*="menu"]',
-        'button-view-model button[aria-label*="추가"]',
-        'button-view-model button[aria-label*="Action"]',
-        'yt-button-shape button[aria-label*="추가"]',
-        'yt-button-shape button[aria-label*="Action"]',
-        'button[aria-label="Action menu"]',
-        'button[aria-label*="Action"]',
-        'button[aria-label*="추가 작업"]',
-        'button[aria-label*="작업 메뉴"]',
-        'ytd-menu-renderer button'
-    ];
-    const selectors = pageType === 'watch' ? watchSelectors : homeSelectors;
-    
-    let menuButton = null;
-    for (const sel of selectors) {
-        const btns = videoElement.querySelectorAll(sel);
-        for (const btn of btns) {
-            if (isVisible(btn)) {
-                menuButton = btn;
-                break;
-            }
-        }
-        if (menuButton) break;
-    }
-    
-    if (!menuButton) {
-      const allButtons = videoElement.querySelectorAll('button, yt-icon-button');
-      for (const btn of allButtons) {
-        const label = btn.getAttribute('aria-label') || "";
-        if (isVisible(btn) && (btn.innerText?.includes('⋮') ||
-            btn.innerHTML?.includes('more_vert') || 
-            label.match(/메뉴|menu|Action|더보기/i))) {
-          menuButton = btn;
-          break;
-        }
-      }
-    }
-
-    if (!menuButton || !videoElement.isConnected) {
-      return { success: false, reason: 'missing_menu' };
-    }
-
-    // Avoid fighting with a menu the user or YouTube already has open.
-    // The queue will retry this card later instead of toggling that popup.
-    const openPopup = Array.from(document.querySelectorAll(popupSelector)).find(isVisible);
-    if (openPopup) {
-      return { success: false, reason: 'menu_busy' };
-    }
-
-    assertCurrent(action);
-    action.openedMenu = true;
-    menuButton.click();
-    let foundAny = false;
-    for (let attempt = 1; attempt <= 41; attempt++) {
-      await wait(100, action);
-      assertCurrent(action);
-      action.menuPopup ||= Array.from(document.querySelectorAll(popupSelector)).find(isVisible);
-      if (action.menuPopup && !isVisible(action.menuPopup)) return { success: false, reason: 'menu_closed' };
-      const items = action.menuPopup?.querySelectorAll(
-        'yt-list-item-view-model, ytd-menu-service-item-renderer, tp-yt-paper-item, yt-button-view-model, ytd-menu-navigation-item-renderer'
-      ) || [];
-      foundAny = false;
-      for (const item of items) {
-        if (!isVisible(item)) continue;
-        foundAny = true;
-        const text = item.innerText || item.textContent || '';
-        if (/^(관심없음|Notinterested|興味なし|不感兴趣)$/i.test(text.replace(/\s/g, ''))) {
-          assertCurrent(action);
-          debugLog('Found UI button, clicking...');
-          const clickTarget = item.querySelector('button, [role="button"]') || item;
-          clickTarget.click();
-          return { success: true, reason: 'ui' };
-        }
-      }
-      if (pageType === 'home' && foundAny && attempt >= 5) {
-        return { success: false, reason: 'missing_not_interested' };
-      }
-    }
-    return { success: false, reason: foundAny ? 'missing_not_interested' : 'menu_timeout' };
-  }
-
   window.addEventListener('youtube-skip-cancel', (event) => {
     if (activeAction?.videoId === event.detail.videoId) {
       activeAction.controller.abort(actionFailure('cancelled'));
@@ -330,44 +209,42 @@
       existingResults: new Set(Array.from(document.querySelectorAll(hiddenResultSelector)).filter(isVisible))
     };
     activeAction = action;
-    let restoreActionScrolling = null;
     let response = { success: false, method: 'failed' };
 
     try {
       assertCurrent(action);
-      let data = videoElement.data || (videoElement.__data && videoElement.__data.data) || videoElement.__data;
-      
-      if (!data) {
-          const pageSelectors = pageType === 'watch'
-            ? 'yt-lockup-view-model, ytd-compact-video-renderer, yt-lockup-metadata-view-model'
-            : 'ytd-rich-grid-media, ytd-video-renderer, yt-lockup-view-model, ytd-rich-item-renderer';
-          const vm = videoElement.matches(pageSelectors) ? videoElement : videoElement.querySelector(pageSelectors);
-          if (vm) data = vm.data || vm.__data;
+      const pageSelectors = pageType === 'watch'
+        ? 'yt-lockup-view-model, ytd-compact-video-renderer, yt-lockup-metadata-view-model'
+        : 'ytd-rich-grid-media, ytd-video-renderer, yt-lockup-view-model, ytd-rich-item-renderer';
+      const candidates = [videoElement, ...videoElement.querySelectorAll(pageSelectors)];
+      const content = videoElement.querySelector('#content');
+      if (content) candidates.push(content);
+      let command = null;
+      for (const candidate of candidates) {
+        for (const data of [candidate.data, candidate.__data?.data, candidate.__data]) {
+          command = findNotInterestedEndpoint(data);
+          if (command) break;
+        }
+        if (command) break;
       }
-      
-      if (!data) {
-          const content = videoElement.querySelector('#content');
-          if (content) data = content.data || content.__data;
-      }
+      if (!command) throw actionFailure('missing_command');
 
-      const command = data ? findNotInterestedEndpoint(data) : null;
       const ytdApp = document.querySelector('ytd-app');
+      const resolver = typeof ytdApp?.resolveCommand === 'function' ? ytdApp.resolveCommand : ytdApp?.resolve;
+      if (typeof resolver !== 'function') throw actionFailure('missing_resolver');
+      if (Array.from(document.querySelectorAll(popupSelector)).some(isVisible)) {
+        throw actionFailure('menu_busy');
+      }
 
-      restoreActionScrolling = suppressActionScrolling(videoElement, pageType === 'home');
-
-      if (command && (ytdApp?.resolveCommand || ytdApp?.resolve)) {
-        const resolver = (ytdApp.resolveCommand || ytdApp.resolve).bind(ytdApp);
-        Promise.resolve(resolver(command)).catch(() => {
+      try {
+        Promise.resolve(resolveWithoutMovingPage(ytdApp, resolver, command)).catch(() => {
           action.controller.abort(actionFailure('command_failed'));
         });
-        debugLog('v1/feedback triggered via API for:', videoId);
-        response.method = 'api';
-      } else {
-        debugLog('API discovery failed, attempting UI simulation for:', videoId);
-        const uiResult = await clickNotInterestedUI(action, pageType, debugLog);
-        if (!uiResult.success) throw actionFailure(uiResult.reason);
-        response.method = 'ui';
+      } catch {
+        throw actionFailure('command_failed');
       }
+      debugLog('Not interested command submitted for:', targetVideoId);
+      response.method = 'api';
       const result = await waitForHiddenResult(action);
       assertCurrent(action, false);
       if (!isVisible(result)) throw actionFailure('stale_target');
@@ -378,11 +255,6 @@
       if (err.method) debugLog('Action did not complete:', err.method);
       else console.error('[youtube_skip] Injection error:', err);
     } finally {
-      if (action.openedMenu && window.location.href === pageUrl &&
-          (isVisible(action.menuPopup) || (!action.menuPopup && Array.from(document.querySelectorAll(popupSelector)).some(isVisible)))) {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
-      }
-      restoreActionScrolling?.(!action.controller.signal.aborted && window.location.href === pageUrl);
       activeAction = null;
     }
     sendResponse(response.success, response.method);

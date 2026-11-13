@@ -85,7 +85,8 @@
       if (element.tagName.toLowerCase() !== 'yt-lockup-view-model') return element;
       return element.closest('ytd-rich-item-renderer, ytd-video-renderer') || element;
     },
-    isEligible: (element) => !element.closest('#secondary'),
+    isEligible: (element) => !element.closest('#secondary, ytd-ad-slot-renderer') &&
+      !element.querySelector('ytd-ad-slot-renderer'),
     extractAge: (element) => Shared.findAgeInElement(element, [
       '#metadata-line span',
       'yt-content-metadata-view-model [aria-label]',
@@ -96,6 +97,7 @@
       '#video-title',
       '#video-title-link',
       '.yt-lockup-metadata-view-model-wiz__title',
+      '.ytLockupMetadataViewModelHeadingReset[title]',
       '.ytLockupMetadataViewModelTitle',
       'a[title]',
       'a[href*="/watch?v="][aria-label]'

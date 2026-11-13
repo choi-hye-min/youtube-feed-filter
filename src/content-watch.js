@@ -21,8 +21,8 @@
       '#metadata-line span'
     ]),
     extractTitle: (element) => Shared.firstText(element, [
-      '.ytLockupMetadataViewModelTitle',
       '.ytLockupMetadataViewModelHeadingReset[title]',
+      '.ytLockupMetadataViewModelTitle',
       '#video-title',
       'a[href*="/watch?v="][aria-label]'
     ]),

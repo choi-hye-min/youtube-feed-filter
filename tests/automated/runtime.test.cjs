@@ -50,7 +50,9 @@ function harness(cards, { repeat = false, counts = {}, page = 'home' } = {}) {
   };
   const document = {
     querySelectorAll: () => cards,
-    querySelector: selector => results.get(selector.match(/"([^"]+)"/)?.[1]) || null
+    querySelector: selector => results.get(selector.match(/"([^"]+)"/)?.[1]) || null,
+    createElement: name => ({ tagName: name.toUpperCase(), textContent: '' }),
+    createTextNode: textContent => ({ textContent })
   };
   vm.runInNewContext(source, {
     window, document, chrome: { runtime: { sendMessage(message, callback) {
@@ -95,10 +97,10 @@ function harness(cards, { repeat = false, counts = {}, page = 'home' } = {}) {
     }
     now = until;
   }
-  function respond(action, { success = false, method = 'missing_command', hidden = false } = {}) {
+  function respond(action, { success = false, method = 'missing_command', hidden = false, hiddenNodes = [] } = {}) {
     let result;
     if (hidden) {
-      result = { querySelectorAll: () => [], setAttribute(name, value) { this[name] = value; } };
+      result = { querySelectorAll: () => hiddenNodes, setAttribute(name, value) { this[name] = value; } };
       results.set(action.videoId, result);
     }
     window.dispatchEvent({ type: 'youtube-skip-response', detail: { videoId: action.videoId, success, method } });
@@ -301,6 +303,47 @@ test('only a tagged hidden result increments skipped and receives the reason', a
   h.runtime.reset(true);
   h.createRuntime().apply();
   assert.equal(h.actions.length, 2, 'A refreshed home feed can reuse a previously completed card');
+});
+
+test('English and Korean hidden messages show the reason and title while preserving Undo and feedback controls', async () => {
+  for (const [message, undoLabel, feedbackLabel] of [
+    ['Video removed', 'Undo', 'Tell us why'],
+    ['Video hidden', 'Undo', 'Tell us why'],
+    ['동영상 숨김', '실행취소', '이유를 알려주세요']
+  ]) {
+    for (const page of ['home', 'watch']) {
+      let undone = false;
+      const undo = { textContent: undoLabel, click() { undone = true; } };
+      const feedback = { textContent: feedbackLabel };
+      const label = {
+        textContent: message,
+        closest: () => null,
+        replaceChildren(...children) {
+          this.children = children;
+          this.textContent = children.map(child => child.textContent).join('');
+        },
+        setAttribute(name, value) { this[name] = value; }
+      };
+      const undoText = { textContent: undoLabel, closest: () => undo };
+      const feedbackText = { textContent: feedbackLabel, closest: () => feedback };
+      const h = harness([card('target-video', 14)], { page });
+      h.runtime.apply();
+      h.respond(h.actions[0], {
+        success: true, method: 'api', hidden: true,
+        hiddenNodes: [label, undoText, feedbackText]
+      });
+      await h.flush();
+      assert.equal(label.textContent, '[14 days ago 업로드]target-video', `${page}: ${message}`);
+      assert.equal(label.children[1].tagName, 'BR');
+      assert.equal(label['aria-label'], '[14 days ago 업로드] target-video');
+      assert.equal(undoText.textContent, undoLabel);
+      assert.equal(feedbackText.textContent, feedbackLabel);
+      assert.equal(undoText.closest(), undo);
+      undo.click();
+      assert.equal(undone, true);
+      assert.equal(h.stats().skipped, 1);
+    }
+  }
 });
 
 test('an unconfirmed success response is not retried or counted as skipped', async () => {

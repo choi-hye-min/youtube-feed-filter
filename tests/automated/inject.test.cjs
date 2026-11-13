@@ -71,6 +71,9 @@ function harness(withShared = false) {
       if (selector.includes('yt-list-item-view-model')) return this.kind === 'item';
       if (selector.includes('ytd-menu-popup-renderer')) return this.kind === 'popup';
       if (selector === '#content') return this.getAttribute('id') === 'content';
+      if (selector === 'yt-lockup-metadata-view-model button, ytd-menu-renderer button') {
+        return this.kind === 'button' && ['metadata', 'menu'].includes(this.parentElement?.kind);
+      }
       if (selector.includes('yt-lockup-view-model')) return this.kind === 'card';
       if (selector.includes('button')) return this.kind === 'button';
       return false;
@@ -89,6 +92,7 @@ function harness(withShared = false) {
   class HTMLElement extends Element {
     focus(options) {
       document.activeElement = this;
+      document.dispatchEvent({ type: 'focusin', target: this, isTrusted: true });
       if (!options?.preventScroll) this.scrollIntoView();
     }
   }
@@ -116,7 +120,7 @@ function harness(withShared = false) {
     scrollTo(x, y) { scrolls.push([x, y]); this.scrollX = x; this.scrollY = y; },
     scrollBy(x, y) { this.scrollTo(this.scrollX + x, this.scrollY + y); }
   });
-  const originals = { focus: HTMLElement.prototype.focus, scrollIntoView: Element.prototype.scrollIntoView,
+  const nativeMethods = { focus: HTMLElement.prototype.focus, scrollIntoView: Element.prototype.scrollIntoView,
     scrollTo: window.scrollTo, scrollBy: window.scrollBy };
   class Event { constructor(type, init) { this.type = type; Object.assign(this, init); } }
   const context = vm.createContext({
@@ -127,6 +131,7 @@ function harness(withShared = false) {
     clearTimeout: (id) => timers.delete(id), clearInterval: (id) => timers.delete(id)
   });
   vm.runInContext(source, context);
+  const guardedMethods = { focus: HTMLElement.prototype.focus, scrollIntoView: Element.prototype.scrollIntoView };
   if (withShared) vm.runInContext(sharedSource, context);
   window.addEventListener('youtube-skip-response', (event) => responses.push(event.detail));
   document.addEventListener('keydown', () => {
@@ -158,10 +163,10 @@ function harness(withShared = false) {
     window.dispatchEvent(new Event('youtube-skip-cancel', { detail: { videoId } }));
   }
   function assertMethodsRestored() {
-    assert.equal(HTMLElement.prototype.focus, originals.focus);
-    assert.equal(Element.prototype.scrollIntoView, originals.scrollIntoView);
-    assert.equal(window.scrollTo, originals.scrollTo);
-    assert.equal(window.scrollBy, originals.scrollBy);
+    assert.equal(HTMLElement.prototype.focus, guardedMethods.focus);
+    assert.equal(Element.prototype.scrollIntoView, guardedMethods.scrollIntoView);
+    assert.equal(window.scrollTo, nativeMethods.scrollTo);
+    assert.equal(window.scrollBy, nativeMethods.scrollBy);
   }
   function assertRestored() {
     assertMethodsRestored();
@@ -190,7 +195,7 @@ function harness(withShared = false) {
       extractTitle: () => 'Target video', getActionDelay: () => 0
     }, { enabled: true, homeEnabled: true, threshold: '1week' });
   }
-  return { node, body, parent, card, link, document, window, app, responses, commands, errors, scrolls,
+  return { node, body, parent, card, link, document, window, app, responses, commands, errors, scrolls, nativeMethods,
     request, cancel, advance, assertRestored, assertMethodsRestored, ui, createRuntime,
     setResolver: (resolver) => { resolveCommand = resolver; } };
 }
@@ -220,6 +225,107 @@ test('extracts the command from the current list-item renderer context', async (
   h.request();
   await h.advance();
   assert.equal(h.commands[0], feedback);
+  assert.equal(h.responses[0].success, true);
+  h.assertRestored();
+});
+
+test('reads current view-model signals and dispatches the exact labeled command with its menu context', async () => {
+  for (const page of ['home', 'watch']) {
+    for (const property of ['rawProps', 'componentProps']) {
+      for (const label of ['관심 없음', 'Not interested']) {
+        const h = harness();
+        h.card.data = null;
+        if (page === 'watch') {
+          h.window.location.pathname = '/watch';
+          h.window.location.href = 'https://www.youtube.com/watch?v=playing';
+        }
+        const renderer = page === 'home' ? h.card.append(h.node('card')) : h.card;
+        const item = (title, command) => ({ listItemViewModel: {
+          title: { content: title },
+          rendererContext: { commandContext: { onTap: { innertubeCommand: command } } }
+        } });
+        renderer[property] = { data: () => ({ metadata: { lockupMetadataViewModel: {
+          menuButton: { buttonViewModel: { onTap: { innertubeCommand: { showSheetCommand: {
+            panelLoadingStrategy: { inlineContent: { sheetViewModel: { content: { listViewModel: {
+              listItems: [item('채널 추천 안함', { feedbackEndpoint: { feedbackToken: 'block-channel' } }),
+                item(label, feedback)]
+            } } } } }
+          } } } } }
+        } } }) };
+        const thumbnailButton = renderer.append(h.node('button'));
+        const menuButton = renderer.append(h.node('metadata')).append(h.node('button'));
+        thumbnailButton.onClick = menuButton.onClick = () => assert.fail('Card controls must not be clicked');
+        h.app.resolveCommand = undefined;
+        let calls = 0;
+        h.app.handleCommandWithCommandHandler = function(command, target) {
+          assert.equal(arguments.length, 2);
+          assert.equal(this, h.app);
+          assert.equal(command, feedback);
+          assert.equal(target, menuButton);
+          calls++;
+          h.card.append(h.node('result'));
+        };
+        h.request();
+        await h.advance();
+        assert.equal(calls, 1);
+        assert.equal(h.responses[0].success, true);
+        assert.equal(h.responses[0].method, 'api');
+        h.assertRestored();
+      }
+    }
+  }
+});
+
+test('the current command handler waits for a real hidden result and restores browsing methods immediately', async () => {
+  for (const resultAppears of [false, true]) {
+    const h = harness();
+    const input = h.body.append(h.node('input'));
+    input.focus({ preventScroll: true });
+    const menuButton = h.card.append(h.node('menu')).append(h.node('button'));
+    h.app.resolveCommand = null;
+    let calls = 0;
+    h.app.handleCommandWithCommandHandler = function(command, target) {
+      assert.equal(command, feedback);
+      assert.equal(target, menuButton);
+      calls++;
+      target.focus();
+      target.scrollIntoView();
+      h.window.scrollTo(0, 500);
+      h.window.scrollBy(0, 300);
+    };
+    h.request();
+    h.assertMethodsRestored();
+    assert.equal(h.document.activeElement, input);
+    assert.equal(h.window.scrollY, 200);
+    assert.deepEqual(h.scrolls, []);
+    assert.equal(h.responses.length, 0);
+    const otherInput = h.body.append(h.node('input'));
+    otherInput.focus({ preventScroll: true });
+    h.window.scrollTo(0, 650);
+    if (resultAppears) h.card.append(h.node('result'));
+    await h.advance();
+    assert.equal(calls, 1);
+    assert.equal(h.responses[0].success, resultAppears);
+    assert.equal(h.responses[0].method, resultAppears ? 'api' : 'result_timeout');
+    assert.equal(h.document.activeElement, otherInput);
+    assert.equal(h.window.scrollY, 650);
+    h.assertRestored();
+  }
+});
+
+test('the current command handler receives the card when no menu button is present', async () => {
+  const h = harness();
+  h.card.data = null;
+  h.card.rawProps = { data: menuData() };
+  h.app.resolveCommand = {};
+  h.app.resolve = null;
+  h.app.handleCommandWithCommandHandler = function(command, target) {
+    assert.equal(command, feedback);
+    assert.equal(target, h.card);
+    h.card.append(h.node('result'));
+  };
+  h.request();
+  await h.advance();
   assert.equal(h.responses[0].success, true);
   h.assertRestored();
 });
@@ -280,6 +386,25 @@ test('uses the callable resolve alternative when resolveCommand is unavailable',
   h.assertRestored();
 });
 
+test('legacy resolvers retain their one-argument contract when the current handler is also available', async () => {
+  for (const method of ['resolveCommand', 'resolve']) {
+    const h = harness();
+    h.app.resolveCommand = undefined;
+    h.card.append(h.node('metadata')).append(h.node('button'));
+    h.app.handleCommandWithCommandHandler = () => assert.fail('Do not submit the same feedback twice');
+    h.app[method] = function(command) {
+      assert.equal(arguments.length, 1);
+      assert.equal(command, feedback);
+      assert.equal(this, h.app);
+      h.card.append(h.node('result'));
+    };
+    h.request();
+    await h.advance();
+    assert.equal(h.responses[0].success, true);
+    h.assertRestored();
+  }
+});
+
 test('command execution preserves focus and scroll on both home and watch', async () => {
   for (const page of ['home', 'watch']) {
     const h = harness();
@@ -327,6 +452,180 @@ test('waiting and finishing never overwrite the users latest focus or scroll pos
     assert.deepEqual(h.scrolls, [[0, 650], [0, 700]]);
     h.assertRestored();
   }
+});
+
+test('late automatic result focus and scrolling cannot steal input before confirmation or after completion', async () => {
+  for (const position of ['inside', 'replacement', 'before', 'after']) {
+    const h = harness();
+    const boundary = h.node('card');
+    boundary.parentElement = h.parent;
+    h.parent.children.unshift(boundary);
+    h.parent.append(h.node('card'));
+    const input = h.body.append(h.node('input'));
+    input.focus({ preventScroll: true });
+    h.request();
+    const result = h.node('result');
+    if (position === 'inside') h.card.append(result);
+    else if (position === 'replacement') h.card.replaceWith(result);
+    else {
+      h.card.visible = false;
+      result.parentElement = h.parent;
+      h.parent.children.splice(h.parent.children.indexOf(h.card) + (position === 'before' ? 0 : 1), 0, result);
+    }
+    const undo = result.append(h.node('button'));
+    undo.focus();
+    undo.scrollIntoView();
+    result.scrollIntoView();
+    assert.equal(h.responses.length, 0);
+    assert.equal(h.document.activeElement, input);
+    assert.equal(h.window.scrollY, 200);
+    assert.deepEqual(h.scrolls, []);
+    await h.advance();
+    assert.equal(h.responses[0].success, true);
+    h.window.scrollTo(0, 650);
+    undo.focus();
+    result.scrollIntoView();
+    assert.equal(h.document.activeElement, input);
+    assert.equal(h.window.scrollY, 650);
+    assert.deepEqual(h.scrolls, [[0, 650]]);
+    h.assertRestored();
+  }
+});
+
+test('unrelated focus and scroll keep native behavior while a feedback result is pending', async () => {
+  const h = harness();
+  h.request();
+  const input = h.body.append(h.node('input'));
+  input.focus({ preventScroll: true });
+  assert.equal(h.document.activeElement, input);
+  assert.equal(h.window.scrollY, 200);
+  const player = h.body.append(h.node('player'));
+  player.focus();
+  assert.equal(h.document.activeElement, player);
+  assert.equal(h.window.scrollY, 1000);
+  h.window.scrollTo(0, 300);
+  input.scrollIntoView();
+  assert.equal(h.window.scrollY, 1000);
+  h.window.scrollBy(0, 25);
+  assert.equal(h.window.scrollY, 1025);
+  assert.deepEqual(h.scrolls, [[0, 1000], [0, 300], [0, 1000], [0, 1025]]);
+  h.cancel();
+  await h.advance();
+  h.assertRestored();
+});
+
+test('manual existing results and another cards results retain native focus and scrolling', async () => {
+  for (const placement of ['existing', 'neighbor']) {
+    const h = harness();
+    const neighbor = h.parent.append(h.node('card'));
+    const result = placement === 'existing' ? h.card.append(h.node('result')) : h.node('result');
+    h.request();
+    if (placement === 'neighbor') neighbor.append(result);
+    const undo = result.append(h.node('button'));
+    undo.focus();
+    assert.equal(h.document.activeElement, undo);
+    assert.equal(h.window.scrollY, 1000);
+    h.window.scrollTo(0, 300);
+    result.scrollIntoView();
+    assert.equal(h.window.scrollY, 1000);
+    h.cancel();
+    await h.advance();
+    h.assertRestored();
+  }
+});
+
+test('trusted result interaction releases protection for that action even before first registration', async () => {
+  for (const interaction of ['pointerdown', 'keydown', 'native-focus']) {
+    for (const alreadyProtected of [false, true]) {
+      const h = harness();
+      const input = h.body.append(h.node('input'));
+      input.focus({ preventScroll: true });
+      h.request();
+      const result = h.card.append(h.node('result'));
+      const undo = result.append(h.node('button'));
+      if (alreadyProtected) {
+        undo.focus();
+        assert.equal(h.document.activeElement, input);
+      }
+      if (interaction === 'native-focus') h.nativeMethods.focus.call(undo, { preventScroll: true });
+      else h.document.dispatchEvent({ type: interaction, target: undo, isTrusted: true });
+      input.focus({ preventScroll: true });
+      undo.focus();
+      assert.equal(h.document.activeElement, undo);
+      assert.equal(h.window.scrollY, 1000);
+      input.focus({ preventScroll: true });
+      h.window.scrollTo(0, 650);
+      await h.advance();
+      assert.equal(h.responses[0].success, true);
+      undo.scrollIntoView();
+      undo.focus();
+      assert.equal(h.document.activeElement, undo);
+      assert.equal(h.window.scrollY, 1000);
+      h.assertRestored();
+    }
+  }
+});
+
+test('a later automatic action protects a previously released and reused hidden result', async () => {
+  const h = harness();
+  const input = h.body.append(h.node('input'));
+  input.focus({ preventScroll: true });
+  let result;
+  h.setResolver(() => { result = h.card.append(h.node('result')); });
+  h.request();
+  await h.advance();
+  const undo = result.append(h.node('button'));
+  h.document.dispatchEvent({ type: 'pointerdown', target: undo, isTrusted: true });
+  result.visible = false;
+  h.link.href = 'https://www.youtube.com/watch?v=replacement';
+  input.focus({ preventScroll: true });
+  h.window.scrollTo(0, 650);
+  h.setResolver(() => { result.visible = true; });
+  h.request('request-2', { targetVideoId: 'replacement' });
+  undo.focus();
+  assert.equal(h.document.activeElement, input);
+  assert.equal(h.window.scrollY, 650);
+  await h.advance();
+  assert.equal(h.responses[1].success, true);
+  assert.equal(result.getAttribute('data-youtube-skip-result-id'), 'request-2');
+  undo.focus();
+  result.scrollIntoView();
+  assert.equal(h.document.activeElement, input);
+  assert.equal(h.window.scrollY, 650);
+  h.assertRestored();
+});
+
+test('untrusted events cannot release automatic result protection', async () => {
+  const h = harness();
+  const input = h.body.append(h.node('input'));
+  input.focus({ preventScroll: true });
+  h.request();
+  const result = h.card.append(h.node('result'));
+  const undo = result.append(h.node('button'));
+  for (const type of ['pointerdown', 'keydown', 'focusin']) {
+    h.document.dispatchEvent({ type, target: undo, isTrusted: false });
+    undo.focus();
+    undo.scrollIntoView();
+    assert.equal(h.document.activeElement, input);
+    assert.equal(h.window.scrollY, 200);
+  }
+  await h.advance();
+  assert.equal(h.responses[0].success, true);
+  h.assertRestored();
+});
+
+test('a reused card does not gain automatic result protection for its replacement video', async () => {
+  const h = harness();
+  h.request();
+  h.link.href = 'https://www.youtube.com/watch?v=replacement';
+  const result = h.card.append(h.node('result'));
+  const undo = result.append(h.node('button'));
+  undo.focus();
+  assert.equal(h.document.activeElement, undo);
+  assert.equal(h.window.scrollY, 1000);
+  await h.advance();
+  assert.equal(h.responses[0].method, 'stale_target');
+  h.assertRestored();
 });
 
 test('missing, label-only and icon-only commands leave the card and menus untouched', async () => {

@@ -200,7 +200,7 @@
       const textNodes = Array.from(result.querySelectorAll('yt-formatted-string, h1, h2, h3, span'))
         .filter((node) =>
           !node.closest('button, tp-yt-paper-button, a') &&
-          /동영상 숨김|Video hidden/i.test(node.textContent?.trim() || '')
+          /동영상 숨김|Video (?:hidden|removed)/i.test(node.textContent?.trim() || '')
         );
       const target = textNodes[0];
       if (target) {

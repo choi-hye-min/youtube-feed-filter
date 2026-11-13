@@ -3,8 +3,8 @@
 Run on both the home feed and `/watch` recommendations, in English and Korean.
 Use a test YouTube account: submitted feedback changes recommendations.
 
-Live YouTube verification for this change has not been performed. Record the extension and
-Chrome versions, locale, page type, and pass/fail/not-observed result for each scenario.
+Record the extension and Chrome versions, locale, page type, and
+pass/fail/not-observed result for each scenario. See the live run record below.
 DOM fixtures cover known command-data shapes; they do not establish that current live
 YouTube exposes a usable command or resolver.
 
@@ -30,7 +30,7 @@ YouTube exposes a usable command or resolver.
 2. Focus the YouTube search field and type while results are pending. Confirm focus remains where you placed it and typing is uninterrupted after each result or failure.
 3. On `/watch`, focus the player and use its keyboard controls while recommendations are processed. Confirm filtering does not move focus to a recommendation or menu.
 4. Open and close your own recommendation menu while cards are pending. Confirm no automatic menu appears and filtering does not close your menu or act on its items.
-5. Repeat with Debug Logging off and on. Record any later YouTube-driven focus or layout movement separately: protection covers only the synchronous resolver call, not YouTube's asynchronous work or browser layout changes.
+5. Repeat with Debug Logging off and on. Confirm delayed programmatic focus/scroll requests on the automatic hidden result cannot move focus away from the search field. Click or Tab into that result and confirm Undo remains usable. Record unrelated asynchronous window scrolling or layout movement separately.
 
 ## Unavailable commands and failures
 
@@ -58,3 +58,53 @@ a stubbed YouTube command resolver and exercised native DOM, focus, and scroll A
 synchronous movement suppression, user changes during the result wait, missing
 commands, missing resolvers, an open user menu, and command rejection.
 This does not verify the extension loader or signed-in live YouTube command availability.
+
+## Live YouTube run — 2026-11-13
+
+The user confirmed the installed unpacked extension reports 2.0.0 and enabled Debug
+Logging. The signed-in Chrome session loaded the edited local scripts on page refresh.
+
+Before the fix, Korean home produced 7 `missing_resolver` failures and no hidden
+results; Korean watch produced 15 `missing_command` failures and no hidden results.
+Live diagnostics identified signal-backed `rawProps.data()` on view-model cards and
+`ytd-app.handleCommandWithCommandHandler(command, element)` as the available dispatcher.
+
+After adding those paths, the Korean home run confirmed 27 hidden results in one
+snapshot (additional cards were still queued). Korean watch confirmed 11 hidden
+results and 9 retained cards, with no failed cards. YouTube supplied the hidden
+result and Undo controls; the extension annotated its reason and title. A separate
+title fix now prefers the heading's title over the accessible label with duration.
+
+The user confirmed popup Skipped and the icon badge both showed 11 on the Korean
+watch run, then disabled filtering. Both open page runtimes logged Stopped; a fresh
+home load had no processed markers or hidden results. The user subsequently reloaded
+the extension and set 6 Months, repeated home appearances ON at 2, and filtering ON.
+
+English testing exposed two further bugs: the actual hidden label was `Video removed`
+and therefore did not receive visible annotations, and asynchronous Undo focus moved
+search focus to a button and scrolled from 0 to 3740.5 and then 5897. The final fix
+recognizes that label and guards only automatic results' programmatic focus/scroll.
+It also prefers the heading title, excluding playback duration.
+
+| Final scenario | Observed evidence |
+| --- | --- |
+| English home repeated appearances | Actual results showed cumulative 2 and 3 appearances with the title and native Undo/Tell us why controls. |
+| Successful filtering during scrolling/input | Hidden count increased from 5 to 7 while scrollY stayed 1168 and the search INPUT retained `filter focus test`. |
+| Pointer and keyboard Undo | Clicking Undo restored its video. Tab moved from Undo to Tell us why; Shift+Tab returned to Undo; Enter restored another video. |
+| User menu | A manually opened recommendation menu stayed open during scroll attempts. No new eligible action was observed during this interval; deterministic fixtures separately cover menu_busy and resume. |
+| English home → watch | SPA logs stopped home and started watch. One 11-month-old recommendation was hidden; 19 remained checked under the 6-month threshold. The player's K shortcut still paused playback. |
+| Korean watch after language restore | One 10-month-old recommendation was hidden with the exact title, reason and native controls; 19 remained checked. |
+| Korean watch → home | Logo navigation stopped watch and started home. Repeat reasons (2 and 6 appearances) and a 6-year upload-age result displayed correctly; search focus remained INPUT at scrollY 0. |
+| Sponsored cards | A repeated sponsored card initially failed missing_command. After the final extension reload, all 4 ad slots had no processed/video-ID markers. Two ordinary recommendations completed (repeat count 2 and upload age 6 months), with no failed cards or extension console errors. |
+
+The YouTube display language was restored to Korean. The latest user-selected test
+settings are 6 Months and repeat ON at 2. Debug Logging remains ON. Browser tooling
+cannot open the installed extension popup because its URL scheme is blocked; popup
+and badge values above were confirmed by the user, not inferred from DOM counts.
+
+The automated suite additionally verifies all threshold presets, global/page settings,
+login gates, debug toggles, visit deduplication and persistence, cancellation, target
+recycling, failure handling, unrelated focus delegation and result reuse. Signed-out
+and browser-restart behavior were covered by fixtures; no account sign-out or browser
+restart was performed for the live run. Live observations are evidence for the tested
+YouTube version, not a guarantee against future changes to its internal commands.

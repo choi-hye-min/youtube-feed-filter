@@ -58,8 +58,10 @@ chrome.storage.local.get('home_exposure_history').then(console.log);
   Repeated scrolling, recycled DOM, and popstate/start/finish ordering did not double-count visits.
   All routes were fulfilled locally, with no live YouTube requests or console/page errors.
 - Popup at 390px width: enabled/default height 538px, save error 557px, signed out 600px; no clipping.
-- Live signed-in YouTube verification: pending; the automated DOM fixtures cannot establish whether
-  YouTube has changed its card selectors or account-specific feedback behavior.
+- 2026-11-13: signed-in live YouTube displayed cumulative appearance reasons and titles with the
+  repeat threshold set to 2. Pointer and keyboard Undo restored videos; successful filtering
+  preserved search focus and scroll position. See [the live run record](filter-runtime-lifecycle.md#live-youtube-run--2026-11-13)
+  for the tested scenarios and the cases covered only by automated fixtures.
 
 
 ## Local fixture screenshots

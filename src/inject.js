@@ -6,6 +6,7 @@
   let activeAction = null;
   const hiddenResultSelector = '.ytDismissibleItemReplacedContent';
   const popupSelector = 'ytd-menu-popup-renderer, tp-yt-iron-dropdown, yt-sheet-view-model';
+  const resultProtection = new WeakMap();
   const isVisible = (element) => Boolean(
     element && element.isConnected && element.getClientRects().length > 0
   );
@@ -70,7 +71,7 @@
     return null;
   }
 
-  function resolveWithoutMovingPage(app, resolver, command) {
+  function resolveWithoutMovingPage(app, resolver, command, target) {
     const originalFocus = HTMLElement.prototype.focus;
     const originalScrollIntoView = Element.prototype.scrollIntoView;
     const originalScrollTo = window.scrollTo;
@@ -83,7 +84,9 @@
     window.scrollTo = function() {};
     window.scrollBy = function() {};
     try {
-      return resolver.call(app, command);
+      return resolver === app.handleCommandWithCommandHandler
+        ? resolver.call(app, command, target)
+        : resolver.call(app, command);
     } finally {
       HTMLElement.prototype.focus = originalFocus;
       Element.prototype.scrollIntoView = originalScrollIntoView;
@@ -127,29 +130,78 @@
     });
   }
 
+  function findHiddenResult(action) {
+    const candidates = action.element.isConnected ? [action.element] : [];
+    if (action.element.isConnected && !isVisible(action.element)) {
+      const previous = action.element.previousElementSibling;
+      const next = action.element.nextElementSibling;
+      if (next && next !== action.nextSibling && next.nextElementSibling === action.nextSibling &&
+          previous === action.previousSibling) candidates.push(next);
+      if (previous && previous !== action.previousSibling && previous.previousElementSibling === action.previousSibling &&
+          next === action.nextSibling) candidates.push(previous);
+    }
+    if (!action.element.isConnected && action.parent?.isConnected) {
+      const replacement = action.parent.children[action.index];
+      if (replacement && replacement.previousElementSibling === action.previousSibling &&
+          replacement.nextElementSibling === action.nextSibling) candidates.push(replacement);
+    }
+    for (const candidate of candidates) {
+      const results = candidate.matches(hiddenResultSelector)
+        ? [candidate] : candidate.querySelectorAll(hiddenResultSelector);
+      for (const result of results) {
+        if (isVisible(result) && !action.existingResults.has(result)) return result;
+      }
+    }
+    return null;
+  }
+
+  function protectResult(result, action) {
+    if (resultProtection.get(result)?.actionId !== action.videoId) {
+      resultProtection.set(result, { actionId: action.videoId, protected: true });
+    }
+  }
+
+  function shouldPreserveBrowsingState(element) {
+    const result = element.closest(hiddenResultSelector);
+    if (!result) return false;
+    const currentVideoId = activeAction && getVideoId(activeAction.element);
+    if (activeAction && !activeAction.controller.signal.aborted &&
+        (!currentVideoId || currentVideoId === activeAction.targetVideoId) &&
+        window.location.href === activeAction.pageUrl && findHiddenResult(activeAction) === result) {
+      protectResult(result, activeAction);
+    }
+    return resultProtection.get(result)?.protected === true && !result.contains(document.activeElement);
+  }
+
+  // YouTube can focus Undo after the command has returned. Only automatic
+  // feedback results are guarded; unrelated controls keep their native behavior.
+  const nativeFocus = HTMLElement.prototype.focus;
+  const nativeScrollIntoView = Element.prototype.scrollIntoView;
+  HTMLElement.prototype.focus = function(...args) {
+    if (!shouldPreserveBrowsingState(this)) return nativeFocus.apply(this, args);
+  };
+  Element.prototype.scrollIntoView = function(...args) {
+    if (!shouldPreserveBrowsingState(this)) return nativeScrollIntoView.apply(this, args);
+  };
+  for (const eventName of ['pointerdown', 'keydown', 'focusin']) {
+    document.addEventListener(eventName, (event) => {
+      const result = event.target?.closest?.(hiddenResultSelector);
+      if (event.isTrusted && result) {
+        resultProtection.set(result, {
+          actionId: activeAction?.videoId || resultProtection.get(result)?.actionId,
+          protected: false
+        });
+      }
+    }, true);
+  }
+
   async function waitForHiddenResult(action) {
     for (let attempt = 0; attempt <= 16; attempt++) {
       assertCurrent(action, false);
-      const candidates = action.element.isConnected ? [action.element] : [];
-      if (action.element.isConnected && !isVisible(action.element)) {
-        const previous = action.element.previousElementSibling;
-        const next = action.element.nextElementSibling;
-        if (next && next !== action.nextSibling && next.nextElementSibling === action.nextSibling &&
-            previous === action.previousSibling) candidates.push(next);
-        if (previous && previous !== action.previousSibling && previous.previousElementSibling === action.previousSibling &&
-            next === action.nextSibling) candidates.push(previous);
-      }
-      if (!action.element.isConnected && action.parent?.isConnected) {
-        const replacement = action.parent.children[action.index];
-        if (replacement && replacement.previousElementSibling === action.previousSibling &&
-            replacement.nextElementSibling === action.nextSibling) candidates.push(replacement);
-      }
-      for (const candidate of candidates) {
-        const results = candidate.matches(hiddenResultSelector)
-          ? [candidate] : candidate.querySelectorAll(hiddenResultSelector);
-        for (const result of results) {
-          if (isVisible(result) && !action.existingResults.has(result)) return result;
-        }
+      const result = findHiddenResult(action);
+      if (result) {
+        protectResult(result, action);
+        return result;
       }
       if (attempt < 16) await wait(100, action);
     }
@@ -221,7 +273,9 @@
       if (content) candidates.push(content);
       let command = null;
       for (const candidate of candidates) {
-        for (const data of [candidate.data, candidate.__data?.data, candidate.__data]) {
+        for (const source of [candidate.data, candidate.__data?.data, candidate.__data,
+          candidate.rawProps?.data, candidate.componentProps?.data]) {
+          const data = typeof source === 'function' ? source() : source;
           command = findNotInterestedEndpoint(data);
           if (command) break;
         }
@@ -230,14 +284,16 @@
       if (!command) throw actionFailure('missing_command');
 
       const ytdApp = document.querySelector('ytd-app');
-      const resolver = typeof ytdApp?.resolveCommand === 'function' ? ytdApp.resolveCommand : ytdApp?.resolve;
+      const resolver = [ytdApp?.resolveCommand, ytdApp?.resolve, ytdApp?.handleCommandWithCommandHandler]
+        .find((handler) => typeof handler === 'function');
       if (typeof resolver !== 'function') throw actionFailure('missing_resolver');
       if (Array.from(document.querySelectorAll(popupSelector)).some(isVisible)) {
         throw actionFailure('menu_busy');
       }
 
       try {
-        Promise.resolve(resolveWithoutMovingPage(ytdApp, resolver, command)).catch(() => {
+        Promise.resolve(resolveWithoutMovingPage(ytdApp, resolver, command,
+          videoElement.querySelector('yt-lockup-metadata-view-model button, ytd-menu-renderer button') || videoElement)).catch(() => {
           action.controller.abort(actionFailure('command_failed'));
         });
       } catch {
